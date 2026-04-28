@@ -20,12 +20,19 @@ public class ChessBase : MonoBehaviour
 
     private bool isBroken;
     private DamageFlashFx damageFlashFx;
+    private BoxCollider2D baseCollider;
 
     private void Awake()
     {
         if (spriteRenderer == null)
         {
             spriteRenderer = GetComponent<SpriteRenderer>();
+        }
+
+        baseCollider = GetComponent<BoxCollider2D>();
+        if (baseCollider == null)
+        {
+            baseCollider = gameObject.AddComponent<BoxCollider2D>();
         }
 
         currentHp = maxHp;
@@ -41,6 +48,8 @@ public class ChessBase : MonoBehaviour
             new Vector3(0f, 1.35f, 0f),
             1.6f,
             0.14f);
+
+        UpdateColliderShape();
     }
 
     public void SetTeam(Team newTeam)
@@ -120,6 +129,28 @@ public class ChessBase : MonoBehaviour
         {
             spriteRenderer.sprite = enemyBaseSprite;
         }
+    }
+
+    private void UpdateColliderShape()
+    {
+        if (baseCollider == null)
+        {
+            return;
+        }
+
+        Sprite baseSprite = spriteRenderer != null ? spriteRenderer.sprite : null;
+        if (baseSprite != null)
+        {
+            baseCollider.size = new Vector2(
+                Mathf.Max(1.2f, baseSprite.bounds.size.x * 0.9f),
+                Mathf.Max(1.2f, baseSprite.bounds.size.y * 0.9f));
+        }
+        else
+        {
+            baseCollider.size = new Vector2(1.8f, 1.8f);
+        }
+
+        baseCollider.offset = Vector2.zero;
     }
 
     private void UpdateUI()

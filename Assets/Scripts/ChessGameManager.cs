@@ -80,6 +80,14 @@ public class ChessGameManager : MonoBehaviour
     public float enemySpawnInterval = 3f;
     public float minimumEnemySpawnInterval = 1f;
 
+    [Header("Camera")]
+    public Camera mainCamera;
+    public float cameraFollowSpeed = 4.5f;
+    public float cameraTargetY = 0f;
+    public float cameraTargetZ = -10f;
+    public float cameraAheadOffset = 5f;
+    private float cameraFocusX;
+
     [Header("UI")]
     public GameObject cardsPanel;
     public GameObject startMenuPanel;
@@ -172,6 +180,8 @@ public class ChessGameManager : MonoBehaviour
             SpawnRandomEnemy();
         }
 
+        UpdateCameraFollow(Time.deltaTime);
+
         UpdateUI();
     }
 
@@ -193,6 +203,8 @@ public class ChessGameManager : MonoBehaviour
         enemySpawnTimer = 1f;
 
         SetupEndlessMode();
+        cameraFocusX = GetInitialCameraFocusX();
+        SnapCameraToFocus();
 
         UpdateSpawnPointsForCurrentBases();
         RefreshSpawnCardVisuals();
@@ -276,6 +288,7 @@ public class ChessGameManager : MonoBehaviour
         enemyBase = CreateNewEnemyBase(newEnemyPosition);
 
         UpdateSpawnPointsForCurrentBases();
+        cameraFocusX = GetInitialCameraFocusX();
         money = Mathf.Min(maxMoney, money + 100f + endlessScore * 20f);
         RefreshSpawnCardVisuals();
         UpdateUI();
@@ -321,6 +334,59 @@ public class ChessGameManager : MonoBehaviour
         {
             enemySpawnPoint.position = enemyBase.transform.position + new Vector3(-enemyBaseOffset, 0f, 0f);
         }
+    }
+
+    private float GetInitialCameraFocusX()
+    {
+        if (playerBase != null)
+        {
+            return playerBase.transform.position.x + cameraAheadOffset;
+        }
+
+        if (enemyBase != null)
+        {
+            return enemyBase.transform.position.x - cameraAheadOffset;
+        }
+
+        return 0f;
+    }
+
+    private void SnapCameraToFocus()
+    {
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main;
+        }
+
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        Vector3 position = mainCamera.transform.position;
+        position.x = cameraFocusX;
+        position.y = cameraTargetY;
+        position.z = cameraTargetZ;
+        mainCamera.transform.position = position;
+    }
+
+    private void UpdateCameraFollow(float deltaTime)
+    {
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main;
+            if (mainCamera == null)
+            {
+                return;
+            }
+        }
+
+        Vector3 position = mainCamera.transform.position;
+        float lerpT = Mathf.Clamp01(deltaTime * cameraFollowSpeed);
+        position.x = Mathf.Lerp(position.x, cameraFocusX, lerpT);
+        position.y = cameraTargetY;
+        position.z = cameraTargetZ;
+        mainCamera.transform.position = position;
     }
 
     private float GetCurrentEnemySpawnInterval()
@@ -734,6 +800,19 @@ public class ChessGameManager : MonoBehaviour
             if (enemySpawnObject != null)
             {
                 enemySpawnPoint = enemySpawnObject.transform;
+            }
+        }
+
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main;
+            if (mainCamera == null)
+            {
+                Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+                if (cameras != null && cameras.Length > 0)
+                {
+                    mainCamera = cameras[0];
+                }
             }
         }
 

@@ -30,6 +30,7 @@ public class ChessUnit : MonoBehaviour
     private ChessUnit targetUnit;
     private ChessBase targetBase;
     private Rigidbody2D rb;
+    private CircleCollider2D unitCollider;
     private SpriteRenderer spriteRenderer;
     private SpriteRenderer auraGlowRenderer;
     private DamageFlashFx damageFlashFx;
@@ -50,6 +51,15 @@ public class ChessUnit : MonoBehaviour
 
         rb.gravityScale = 0f;
         rb.freezeRotation = true;
+        rb.constraints = RigidbodyConstraints2D.FreezeRotation | RigidbodyConstraints2D.FreezePositionY;
+        rb.interpolation = RigidbodyInterpolation2D.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+
+        unitCollider = GetComponent<CircleCollider2D>();
+        if (unitCollider == null)
+        {
+            unitCollider = gameObject.AddComponent<CircleCollider2D>();
+        }
 
         spriteRenderer = GetComponent<SpriteRenderer>();
         if (spriteRenderer == null)
@@ -60,6 +70,7 @@ public class ChessUnit : MonoBehaviour
         ApplyUnitDefaults();
         currentHp = maxHp;
         SetupVisualEffects();
+        SetupCollisionShape();
         damageFlashFx = ChessCombatFx.AttachDamageFlash(transform);
         ChessCombatFx.AttachHealthBar(
             transform,
@@ -538,6 +549,24 @@ public class ChessUnit : MonoBehaviour
                 moveSpeed = 1.3f;
                 break;
         }
+    }
+
+    private void SetupCollisionShape()
+    {
+        if (unitCollider == null)
+        {
+            return;
+        }
+
+        float radius = 0.38f;
+        if (spriteRenderer != null && spriteRenderer.sprite != null)
+        {
+            radius = Mathf.Max(0.28f, Mathf.Min(spriteRenderer.sprite.bounds.extents.x, spriteRenderer.sprite.bounds.extents.y) * 0.85f);
+        }
+
+        unitCollider.isTrigger = false;
+        unitCollider.radius = radius;
+        unitCollider.offset = Vector2.zero;
     }
 
     private void SetupVisualEffects()
