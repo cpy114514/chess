@@ -20,6 +20,8 @@ public class ChessUnit : MonoBehaviour
     private const float KingAttackSpeedMultiplier = 1.35f;
     private const float KingMoveSpeedMultiplier = 1.25f;
     private const float BishopProjectileSpeed = 8.5f;
+    private const float KnightSplashRadius = 1.45f;
+    private const float KnightSplashDamageRatio = 0.7f;
 
     private float attackTimer;
     private float healTimer;
@@ -266,6 +268,12 @@ public class ChessUnit : MonoBehaviour
             return;
         }
 
+        if (IsKnight())
+        {
+            DealKnightSplashDamage(targetUnit);
+            return;
+        }
+
         targetUnit.TakeDamage(attackDamage);
     }
 
@@ -291,6 +299,36 @@ public class ChessUnit : MonoBehaviour
         }
 
         targetBase.TakeDamage(attackDamage);
+    }
+
+    private void DealKnightSplashDamage(ChessUnit primaryTarget)
+    {
+        if (primaryTarget == null)
+        {
+            return;
+        }
+
+        primaryTarget.TakeDamage(attackDamage);
+
+        ChessUnit[] allUnits = FindObjectsByType<ChessUnit>(FindObjectsSortMode.None);
+        float splashDamage = attackDamage * KnightSplashDamageRatio;
+
+        for (int i = 0; i < allUnits.Length; i++)
+        {
+            ChessUnit unit = allUnits[i];
+            if (unit == null || unit == this || unit.team == team || unit == primaryTarget)
+            {
+                continue;
+            }
+
+            float distance = Vector2.Distance(primaryTarget.transform.position, unit.transform.position);
+            if (distance > KnightSplashRadius)
+            {
+                continue;
+            }
+
+            unit.TakeDamage(splashDamage);
+        }
     }
 
     private void TryHealAllies()
@@ -448,6 +486,11 @@ public class ChessUnit : MonoBehaviour
         return unitName == "Bishop";
     }
 
+    private bool IsKnight()
+    {
+        return unitName == "Knight";
+    }
+
     private void ApplyUnitDefaults()
     {
         switch (unitName)
@@ -468,10 +511,10 @@ public class ChessUnit : MonoBehaviour
                 break;
             case "Knight":
                 maxHp = 150f;
-                attackDamage = 21f;
-                attackRange = 1.2f;
-                attackCooldown = 0.95f;
-                moveSpeed = 2.05f;
+                attackDamage = 18f;
+                attackRange = 1.25f;
+                attackCooldown = 1.05f;
+                moveSpeed = 2.0f;
                 break;
             case "Bishop":
                 maxHp = 115f;

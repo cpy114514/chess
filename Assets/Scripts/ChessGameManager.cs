@@ -33,7 +33,7 @@ public class ChessGameManager : MonoBehaviour
     };
 
     [Header("Mode")]
-    public GameMode currentMode = GameMode.Level;
+    public GameMode currentMode = GameMode.Endless;
     public GameState currentState = GameState.Menu;
 
     [Header("Money")]
@@ -45,8 +45,7 @@ public class ChessGameManager : MonoBehaviour
     public ChessBase playerBase;
     public ChessBase enemyBase;
     public GameObject enemyBasePrefab;
-    public float levelEnemyBaseHp = 1000f;
-    public float levelPlayerBaseHp = 1000f;
+    public float playerBaseHp = 1000f;
 
     [Header("Endless")]
     public int endlessScore = 0;
@@ -86,7 +85,6 @@ public class ChessGameManager : MonoBehaviour
     public GameObject startMenuPanel;
     public TMP_Text startTitleText;
     public TMP_Text startSubtitleText;
-    public Button startLevelButton;
     public Button startEndlessButton;
     public TMP_Text modeText;
     public TMP_Text scoreText;
@@ -102,11 +100,6 @@ public class ChessGameManager : MonoBehaviour
     {
         get
         {
-            if (currentMode == GameMode.Endless)
-            {
-                return true;
-            }
-
             return currentState == GameState.Playing;
         }
     }
@@ -186,6 +179,7 @@ public class ChessGameManager : MonoBehaviour
     {
         ResolveReferences();
 
+        currentMode = GameMode.Endless;
         currentState = GameState.Playing;
         SetGameplayUiVisible(true);
         HideStartMenu();
@@ -198,29 +192,15 @@ public class ChessGameManager : MonoBehaviour
         moneyCarry = 0f;
         enemySpawnTimer = 1f;
 
-        if (currentMode == GameMode.Level)
-        {
-            SetupLevelMode();
-        }
-        else
-        {
-            SetupEndlessMode();
-        }
+        SetupEndlessMode();
 
         UpdateSpawnPointsForCurrentBases();
         RefreshSpawnCardVisuals();
         UpdateUI();
     }
 
-    public void StartLevelMode()
-    {
-        currentMode = GameMode.Level;
-        StartGame();
-    }
-
     public void StartEndlessMode()
     {
-        currentMode = GameMode.Endless;
         StartGame();
     }
 
@@ -239,24 +219,6 @@ public class ChessGameManager : MonoBehaviour
         UpdateUI();
     }
 
-    private void SetupLevelMode()
-    {
-        endlessScore = 0;
-        endlessDifficulty = 0;
-
-        if (playerBase != null)
-        {
-            playerBase.SetTeam(Team.Player);
-            playerBase.ResetHp(levelPlayerBaseHp);
-        }
-
-        if (enemyBase != null)
-        {
-            enemyBase.SetTeam(Team.Enemy);
-            enemyBase.ResetHp(levelEnemyBaseHp);
-        }
-    }
-
     private void SetupEndlessMode()
     {
         endlessScore = 0;
@@ -265,7 +227,7 @@ public class ChessGameManager : MonoBehaviour
         if (playerBase != null)
         {
             playerBase.SetTeam(Team.Player);
-            playerBase.ResetHp(levelPlayerBaseHp);
+            playerBase.ResetHp(playerBaseHp);
         }
 
         if (enemyBase != null)
@@ -282,42 +244,16 @@ public class ChessGameManager : MonoBehaviour
             return;
         }
 
-        if (currentMode == GameMode.Level)
-        {
-            if (destroyedBase.team == Team.Enemy)
-            {
-                LevelVictory();
-            }
-            else
-            {
-                LevelDefeat();
-            }
-
-            return;
-        }
-
         if (destroyedBase.team == Team.Enemy)
         {
             CaptureEnemyBase(destroyedBase);
         }
         else
         {
-            destroyedBase.HealToFull();
+            currentState = GameState.Defeat;
+            StopAllUnits();
+            ShowResult("Defeat");
         }
-    }
-
-    private void LevelVictory()
-    {
-        currentState = GameState.Victory;
-        StopAllUnits();
-        ShowResult("Victory");
-    }
-
-    private void LevelDefeat()
-    {
-        currentState = GameState.Defeat;
-        StopAllUnits();
-        ShowResult("Defeat");
     }
 
     private void CaptureEnemyBase(ChessBase capturedBase)
@@ -333,7 +269,7 @@ public class ChessGameManager : MonoBehaviour
         }
 
         capturedBase.SetTeam(Team.Player);
-        capturedBase.ResetHp(levelPlayerBaseHp);
+        capturedBase.ResetHp(playerBaseHp);
         playerBase = capturedBase;
 
         Vector3 newEnemyPosition = capturedPosition + new Vector3(endlessBaseSpacing, 0f, 0f);
@@ -389,31 +325,16 @@ public class ChessGameManager : MonoBehaviour
 
     private float GetCurrentEnemySpawnInterval()
     {
-        if (currentMode == GameMode.Endless)
-        {
-            return Mathf.Max(minimumEnemySpawnInterval, enemySpawnInterval - endlessDifficulty * 0.15f);
-        }
-
-        return enemySpawnInterval;
+        return Mathf.Max(minimumEnemySpawnInterval, enemySpawnInterval - endlessDifficulty * 0.15f);
     }
 
     private float EnemyHpMultiplier()
     {
-        if (currentMode != GameMode.Endless)
-        {
-            return 1f;
-        }
-
         return 1f + endlessDifficulty * 0.10f;
     }
 
     private float EnemyDamageMultiplier()
     {
-        if (currentMode != GameMode.Endless)
-        {
-            return 1f;
-        }
-
         return 1f + endlessDifficulty * 0.08f;
     }
 
@@ -497,41 +418,31 @@ public class ChessGameManager : MonoBehaviour
     {
         int roll = Random.Range(0, 100);
 
-        if (currentMode == GameMode.Endless)
+        int d = endlessDifficulty;
+        if (d < 2)
         {
-            int d = endlessDifficulty;
-            if (d < 2)
-            {
-                return enemyPawnPrefab;
-            }
-
-            if (d < 4)
-            {
-                return roll < 70 ? enemyPawnPrefab : enemyKnightPrefab;
-            }
-
-            if (d < 7)
-            {
-                if (roll < 50) return enemyPawnPrefab;
-                if (roll < 70) return enemyKnightPrefab;
-                if (roll < 85) return enemyRookPrefab;
-                return enemyBishopPrefab;
-            }
-
-            if (roll < 35) return enemyPawnPrefab;
-            if (roll < 55) return enemyKnightPrefab;
-            if (roll < 70) return enemyRookPrefab;
-            if (roll < 85) return enemyBishopPrefab;
-            if (roll < 95) return enemyQueenPrefab;
-            return enemyKingPrefab;
+            return enemyPawnPrefab;
         }
 
-        if (roll < 45) return enemyPawnPrefab;
-        if (roll < 60) return enemyKnightPrefab;
-        if (roll < 75) return enemyBishopPrefab;
-        if (roll < 88) return enemyRookPrefab;
-        if (roll < 96) return enemyKingPrefab;
-        return enemyQueenPrefab;
+        if (d < 4)
+        {
+            return roll < 70 ? enemyPawnPrefab : enemyKnightPrefab;
+        }
+
+        if (d < 7)
+        {
+            if (roll < 50) return enemyPawnPrefab;
+            if (roll < 70) return enemyKnightPrefab;
+            if (roll < 85) return enemyRookPrefab;
+            return enemyBishopPrefab;
+        }
+
+        if (roll < 35) return enemyPawnPrefab;
+        if (roll < 55) return enemyKnightPrefab;
+        if (roll < 70) return enemyRookPrefab;
+        if (roll < 85) return enemyBishopPrefab;
+        if (roll < 95) return enemyQueenPrefab;
+        return enemyKingPrefab;
     }
 
     private Vector3 GetSpawnPosition(Team team)
@@ -600,12 +511,12 @@ public class ChessGameManager : MonoBehaviour
     {
         if (modeText != null)
         {
-            modeText.text = "Mode: " + currentMode;
+            modeText.text = "Mode: Endless";
         }
 
         if (scoreText != null)
         {
-            scoreText.gameObject.SetActive(currentMode == GameMode.Endless);
+            scoreText.gameObject.SetActive(true);
             scoreText.text = "Score: " + endlessScore;
         }
 
@@ -616,7 +527,7 @@ public class ChessGameManager : MonoBehaviour
 
         if (restartButton != null)
         {
-            restartButton.interactable = currentMode == GameMode.Level && currentState != GameState.Playing;
+            restartButton.interactable = currentState != GameState.Playing;
         }
 
         RefreshSpawnCardVisuals();
@@ -853,15 +764,6 @@ public class ChessGameManager : MonoBehaviour
             }
         }
 
-        if (startLevelButton == null && startMenuPanel != null)
-        {
-            Transform startButtonTransform = startMenuPanel.transform.Find("StartLevelButton");
-            if (startButtonTransform != null)
-            {
-                startLevelButton = startButtonTransform.GetComponent<Button>();
-            }
-        }
-
         if (startEndlessButton == null && startMenuPanel != null)
         {
             Transform endlessButtonTransform = startMenuPanel.transform.Find("StartEndlessButton");
@@ -937,12 +839,6 @@ public class ChessGameManager : MonoBehaviour
 
     private void BindStartMenuButtons()
     {
-        if (startLevelButton != null)
-        {
-            startLevelButton.onClick.RemoveListener(StartLevelMode);
-            startLevelButton.onClick.AddListener(StartLevelMode);
-        }
-
         if (startEndlessButton != null)
         {
             startEndlessButton.onClick.RemoveListener(StartEndlessMode);
@@ -954,7 +850,7 @@ public class ChessGameManager : MonoBehaviour
     {
         ResolveReferences();
 
-        if (moneyText == null || modeText == null || scoreText == null || resultPanel == null || resultText == null || restartButton == null || playerSpawnPoint == null || enemySpawnPoint == null || cardsPanel == null || startMenuPanel == null || startLevelButton == null || startEndlessButton == null)
+        if (moneyText == null || modeText == null || scoreText == null || resultPanel == null || resultText == null || restartButton == null || playerSpawnPoint == null || enemySpawnPoint == null || cardsPanel == null || startMenuPanel == null || startEndlessButton == null)
         {
             Canvas canvas = FindCanvas();
             if (canvas == null)
@@ -972,7 +868,7 @@ public class ChessGameManager : MonoBehaviour
                 modeText = CreateText(
                     "ModeText",
                     canvas.transform,
-                    "Mode: Level",
+                    "Mode: Endless",
                     new Vector2(0f, 1f),
                     new Vector2(0f, 1f),
                     new Vector2(0f, 1f),
@@ -1017,7 +913,7 @@ public class ChessGameManager : MonoBehaviour
                 resultText = CreateText(
                     "ResultText",
                     resultPanel.transform,
-                    "Victory",
+                    "Defeat",
                     new Vector2(0.5f, 0.5f),
                     new Vector2(0.5f, 0.5f),
                     new Vector2(0.5f, 0.5f),
@@ -1152,7 +1048,7 @@ public class ChessGameManager : MonoBehaviour
         TMP_Text subtitle = CreateText(
             "StartSubtitleText",
             panel.transform,
-            "All six pieces are available from the start.",
+            "Only endless mode is available. All six pieces are unlocked from the start.",
             new Vector2(0.5f, 1f),
             new Vector2(0.5f, 1f),
             new Vector2(0.5f, 1f),
@@ -1162,8 +1058,7 @@ public class ChessGameManager : MonoBehaviour
             24f);
         subtitle.alignment = TextAlignmentOptions.Center;
 
-        startLevelButton = CreateMenuButton(panel.transform, "StartLevelButton", "Stage Mode", new Vector2(0f, 24f));
-        startEndlessButton = CreateMenuButton(panel.transform, "StartEndlessButton", "Endless Outposts", new Vector2(0f, -68f));
+        startEndlessButton = CreateMenuButton(panel.transform, "StartEndlessButton", "Start Endless Mode", new Vector2(0f, -8f));
 
         TMP_Text footer = CreateText(
             "StartFooterText",
@@ -1237,7 +1132,7 @@ public class ChessGameManager : MonoBehaviour
 
         if (scoreText != null)
         {
-            scoreText.gameObject.SetActive(visible && currentMode == GameMode.Endless);
+            scoreText.gameObject.SetActive(visible);
         }
 
         if (resultPanel != null)
