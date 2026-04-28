@@ -1,15 +1,9 @@
 using UnityEngine;
 
-public enum Team
-{
-    Player,
-    Enemy
-}
-
 public class ChessUnit : MonoBehaviour
 {
     [Header("Team")]
-    public Team team;
+    public Team team = Team.Player;
 
     [Header("Stats")]
     public string unitName = "Pawn";
@@ -91,8 +85,25 @@ public class ChessUnit : MonoBehaviour
         currentHp = Mathf.Clamp(currentHp, 0f, maxHp);
     }
 
+    public void Initialize(Team newTeam, float hpMultiplier = 1f, float damageMultiplier = 1f, float speedMultiplier = 1f)
+    {
+        team = newTeam;
+        maxHp = Mathf.Max(1f, maxHp * hpMultiplier);
+        attackDamage *= damageMultiplier;
+        moveSpeed *= speedMultiplier;
+        currentHp = maxHp;
+        attackTimer = 0f;
+        healTimer = 0f;
+    }
+
     private void Update()
     {
+        if (ChessGameManager.Instance != null && !ChessGameManager.Instance.IsPlaying)
+        {
+            StopMoving();
+            return;
+        }
+
         attackTimer -= Time.deltaTime;
         healTimer -= Time.deltaTime;
         attackAnimTimer = Mathf.Max(0f, attackAnimTimer - Time.deltaTime);

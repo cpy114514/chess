@@ -1,22 +1,67 @@
-using System;
-using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 [ExecuteAlways]
 public class ChessGameManager : MonoBehaviour
 {
-    [Header("Economy")]
-    public int money = 100;
+    public static ChessGameManager Instance { get; private set; }
+
+    private struct SpawnDefinition
+    {
+        public readonly string label;
+        public readonly float cost;
+        public readonly KeyCode hotkey;
+
+        public SpawnDefinition(string label, float cost, KeyCode hotkey)
+        {
+            this.label = label;
+            this.cost = cost;
+            this.hotkey = hotkey;
+        }
+    }
+
+    private static readonly SpawnDefinition[] SpawnDefinitions =
+    {
+        new SpawnDefinition("Pawn", 50f, KeyCode.Alpha1),
+        new SpawnDefinition("Rook", 150f, KeyCode.Alpha2),
+        new SpawnDefinition("Knight", 120f, KeyCode.Alpha3),
+        new SpawnDefinition("Bishop", 130f, KeyCode.Alpha4),
+        new SpawnDefinition("Queen", 300f, KeyCode.Alpha5),
+        new SpawnDefinition("King", 250f, KeyCode.Alpha6)
+    };
+
+    [Header("Mode")]
+    public GameMode currentMode = GameMode.Level;
+    public GameState currentState = GameState.Playing;
+
+    [Header("Money")]
+    public float money = 100f;
+    public float maxMoney = 500f;
     public float moneyPerSecond = 20f;
-    public TMP_Text moneyText;
+
+    [Header("Bases")]
+    public ChessBase playerBase;
+    public ChessBase enemyBase;
+    public GameObject enemyBasePrefab;
+    public float levelEnemyBaseHp = 1000f;
+    public float levelPlayerBaseHp = 1000f;
+
+    [Header("Endless")]
+    public int endlessScore = 0;
+    public int endlessDifficulty = 0;
+    public float endlessBaseSpacing = 10f;
+    public float endlessStartEnemyBaseHp = 700f;
+    public float endlessHpPerBase = 180f;
+    public float playerBaseOffset = 1.5f;
+    public float enemyBaseOffset = 1.5f;
 
     [Header("Spawn Points")]
     public Transform playerSpawnPoint;
     public Transform enemySpawnPoint;
 
-    [Header("Player Prefabs")]
+    [Header("Player Unit Prefabs")]
     public GameObject playerPawnPrefab;
     public GameObject playerRookPrefab;
     public GameObject playerKnightPrefab;
@@ -24,7 +69,7 @@ public class ChessGameManager : MonoBehaviour
     public GameObject playerQueenPrefab;
     public GameObject playerKingPrefab;
 
-    [Header("Enemy Prefabs")]
+    [Header("Enemy Unit Prefabs")]
     public GameObject enemyPawnPrefab;
     public GameObject enemyRookPrefab;
     public GameObject enemyKnightPrefab;
@@ -32,64 +77,52 @@ public class ChessGameManager : MonoBehaviour
     public GameObject enemyQueenPrefab;
     public GameObject enemyKingPrefab;
 
-    [Header("Enemy Flow")]
-    public float enemySpawnInterval = 1f;
+    [Header("Enemy Spawning")]
+    public float enemySpawnInterval = 3f;
+    public float minimumEnemySpawnInterval = 1f;
 
-    private struct CardDefinition
+    [Header("UI")]
+    public TMP_Text modeText;
+    public TMP_Text scoreText;
+    public TMP_Text moneyText;
+    public GameObject resultPanel;
+    public TMP_Text resultText;
+    public Button restartButton;
+
+    private float moneyCarry;
+    private float enemySpawnTimer;
+
+    public bool IsPlaying
     {
-        public string label;
-        public int cost;
-        public KeyCode hotkey;
-        public Color tint;
-
-        public CardDefinition(string label, int cost, KeyCode hotkey, Color tint)
+        get
         {
-            this.label = label;
-            this.cost = cost;
-            this.hotkey = hotkey;
-            this.tint = tint;
+            if (currentMode == GameMode.Endless)
+            {
+                return true;
+            }
+
+            return currentState == GameState.Playing;
         }
     }
 
-    private class SpawnButtonSpec
+    private void Awake()
     {
-        public CardDefinition definition;
-        public Action action;
-        public Button button;
-        public Image backgroundImage;
-        public Image iconImage;
-        public TMP_Text nameText;
-        public TMP_Text costText;
+        Instance = this;
     }
 
-    private static readonly CardDefinition[] CardDefinitions =
+    private void OnDestroy()
     {
-        new CardDefinition("Pawn", 20, KeyCode.Alpha1, new Color(0.84f, 0.84f, 0.84f, 1f)),
-        new CardDefinition("Rook", 45, KeyCode.Alpha2, new Color(0.66f, 0.78f, 0.98f, 1f)),
-        new CardDefinition("Knight", 35, KeyCode.Alpha3, new Color(0.98f, 0.72f, 0.45f, 1f)),
-        new CardDefinition("Bishop", 50, KeyCode.Alpha4, new Color(0.73f, 0.55f, 0.98f, 1f)),
-        new CardDefinition("Queen", 60, KeyCode.Alpha5, new Color(0.46f, 0.92f, 0.64f, 1f)),
-        new CardDefinition("King", 80, KeyCode.Alpha6, new Color(0.98f, 0.84f, 0.36f, 1f))
-    };
-
-    private static Sprite cardBackgroundSprite;
-    private static Texture2D cardBackgroundTexture;
-
-    private readonly List<SpawnButtonSpec> spawnButtons = new List<SpawnButtonSpec>();
-    private RectTransform buttonRow;
-    private Button templateButton;
-    private TMP_Text templateText;
-    private float moneyCarry;
-    private float enemySpawnTimer;
-    private float battleClock;
-    private bool battleEnded;
-    private bool syncingSceneCards;
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
 
     private void OnEnable()
     {
         if (!Application.isPlaying)
         {
-            SyncSceneCards();
+            EnsureSceneSetup();
         }
     }
 
@@ -97,25 +130,17 @@ public class ChessGameManager : MonoBehaviour
     {
         if (!Application.isPlaying)
         {
-            SyncSceneCards();
+            EnsureSceneSetup();
         }
     }
 
     private void Start()
     {
-        if (!Application.isPlaying)
-        {
-            return;
-        }
-
         ResolveReferences();
-        SyncSceneCards();
+        EnsureSceneSetup();
         ResolveReferences();
-        BuildSpawnButtons();
-        RefreshMoneyUI();
-        RefreshButtonStates();
-
-        enemySpawnTimer = Mathf.Max(0.25f, enemySpawnInterval);
+        BindRuntimeButtons();
+        StartGame();
     }
 
     private void Update()
@@ -125,313 +150,503 @@ public class ChessGameManager : MonoBehaviour
             return;
         }
 
-        if (!battleEnded)
+        if (!IsPlaying)
         {
-            TickMoney();
-            TickEnemySpawner();
-            battleClock += Time.deltaTime;
-            CheckBattleState();
+            StopAllUnits();
+            UpdateUI();
+            return;
         }
 
-        HandleHotkeys();
-        RefreshButtonStates();
-        ApplyButtonTransforms();
+        moneyCarry += moneyPerSecond * Time.deltaTime;
+        int gained = Mathf.FloorToInt(moneyCarry);
+        if (gained > 0)
+        {
+            money += gained;
+            moneyCarry -= gained;
+            money = Mathf.Clamp(money, 0f, maxMoney);
+        }
+
+        enemySpawnTimer -= Time.deltaTime;
+        if (enemySpawnTimer <= 0f)
+        {
+            enemySpawnTimer = GetCurrentEnemySpawnInterval();
+            SpawnRandomEnemy();
+        }
+
+        UpdateUI();
+    }
+
+    public void StartGame()
+    {
+        ResolveReferences();
+
+        currentState = GameState.Playing;
+        if (resultPanel != null)
+        {
+            resultPanel.SetActive(false);
+        }
+
+        money = 100f;
+        moneyCarry = 0f;
+        enemySpawnTimer = 1f;
+
+        if (currentMode == GameMode.Level)
+        {
+            SetupLevelMode();
+        }
+        else
+        {
+            SetupEndlessMode();
+        }
+
+        UpdateSpawnPointsForCurrentBases();
+        RefreshSpawnCardVisuals();
+        UpdateUI();
+    }
+
+    public void StartLevelMode()
+    {
+        currentMode = GameMode.Level;
+        StartGame();
+    }
+
+    public void StartEndlessMode()
+    {
+        currentMode = GameMode.Endless;
+        StartGame();
+    }
+
+    private void SetupLevelMode()
+    {
+        endlessScore = 0;
+        endlessDifficulty = 0;
+
+        if (playerBase != null)
+        {
+            playerBase.SetTeam(Team.Player);
+            playerBase.ResetHp(levelPlayerBaseHp);
+        }
+
+        if (enemyBase != null)
+        {
+            enemyBase.SetTeam(Team.Enemy);
+            enemyBase.ResetHp(levelEnemyBaseHp);
+        }
+    }
+
+    private void SetupEndlessMode()
+    {
+        endlessScore = 0;
+        endlessDifficulty = 0;
+
+        if (playerBase != null)
+        {
+            playerBase.SetTeam(Team.Player);
+            playerBase.ResetHp(levelPlayerBaseHp);
+        }
+
+        if (enemyBase != null)
+        {
+            enemyBase.SetTeam(Team.Enemy);
+            enemyBase.ResetHp(endlessStartEnemyBaseHp);
+        }
+    }
+
+    public void HandleBaseDestroyed(ChessBase destroyedBase)
+    {
+        if (destroyedBase == null)
+        {
+            return;
+        }
+
+        if (currentMode == GameMode.Level)
+        {
+            if (destroyedBase.team == Team.Enemy)
+            {
+                LevelVictory();
+            }
+            else
+            {
+                LevelDefeat();
+            }
+
+            return;
+        }
+
+        if (destroyedBase.team == Team.Enemy)
+        {
+            CaptureEnemyBase(destroyedBase);
+        }
+        else
+        {
+            destroyedBase.HealToFull();
+        }
+    }
+
+    private void LevelVictory()
+    {
+        currentState = GameState.Victory;
+        StopAllUnits();
+        ShowResult("Victory");
+    }
+
+    private void LevelDefeat()
+    {
+        currentState = GameState.Defeat;
+        StopAllUnits();
+        ShowResult("Defeat");
+    }
+
+    private void CaptureEnemyBase(ChessBase capturedBase)
+    {
+        endlessScore += 1;
+        endlessDifficulty += 1;
+
+        Vector3 capturedPosition = capturedBase.transform.position;
+
+        if (playerBase != null && playerBase != capturedBase)
+        {
+            Destroy(playerBase.gameObject);
+        }
+
+        capturedBase.SetTeam(Team.Player);
+        capturedBase.ResetHp(levelPlayerBaseHp);
+        playerBase = capturedBase;
+
+        Vector3 newEnemyPosition = capturedPosition + new Vector3(endlessBaseSpacing, 0f, 0f);
+        enemyBase = CreateNewEnemyBase(newEnemyPosition);
+
+        UpdateSpawnPointsForCurrentBases();
+        money = Mathf.Min(maxMoney, money + 100f + endlessScore * 20f);
+        RefreshSpawnCardVisuals();
+        UpdateUI();
+    }
+
+    private ChessBase CreateNewEnemyBase(Vector3 position)
+    {
+        GameObject newBaseObject;
+        if (enemyBasePrefab != null)
+        {
+            newBaseObject = Instantiate(enemyBasePrefab, position, Quaternion.identity);
+        }
+        else if (enemyBase != null)
+        {
+            newBaseObject = Instantiate(enemyBase.gameObject, position, Quaternion.identity);
+        }
+        else
+        {
+            Debug.LogError("No enemy base prefab or enemyBase reference found.");
+            return null;
+        }
+
+        ChessBase newBase = newBaseObject.GetComponent<ChessBase>();
+        if (newBase == null)
+        {
+            newBase = newBaseObject.AddComponent<ChessBase>();
+        }
+
+        float newHp = endlessStartEnemyBaseHp + endlessDifficulty * endlessHpPerBase;
+        newBase.SetTeam(Team.Enemy);
+        newBase.ResetHp(newHp);
+        return newBase;
+    }
+
+    private void UpdateSpawnPointsForCurrentBases()
+    {
+        if (playerBase != null && playerSpawnPoint != null)
+        {
+            playerSpawnPoint.position = playerBase.transform.position + new Vector3(playerBaseOffset, 0f, 0f);
+        }
+
+        if (enemyBase != null && enemySpawnPoint != null)
+        {
+            enemySpawnPoint.position = enemyBase.transform.position + new Vector3(-enemyBaseOffset, 0f, 0f);
+        }
+    }
+
+    private float GetCurrentEnemySpawnInterval()
+    {
+        if (currentMode == GameMode.Endless)
+        {
+            return Mathf.Max(minimumEnemySpawnInterval, enemySpawnInterval - endlessDifficulty * 0.15f);
+        }
+
+        return enemySpawnInterval;
+    }
+
+    private float EnemyHpMultiplier()
+    {
+        if (currentMode != GameMode.Endless)
+        {
+            return 1f;
+        }
+
+        return 1f + endlessDifficulty * 0.10f;
+    }
+
+    private float EnemyDamageMultiplier()
+    {
+        if (currentMode != GameMode.Endless)
+        {
+            return 1f;
+        }
+
+        return 1f + endlessDifficulty * 0.08f;
     }
 
     public void SpawnPawn()
     {
-        SpawnPlayerUnit(playerPawnPrefab, 20);
+        SpawnPlayerUnit(playerPawnPrefab, 50f);
     }
 
     public void SpawnRook()
     {
-        SpawnPlayerUnit(playerRookPrefab, 45);
+        SpawnPlayerUnit(playerRookPrefab, 150f);
     }
 
     public void SpawnKnight()
     {
-        SpawnPlayerUnit(playerKnightPrefab, 35);
+        SpawnPlayerUnit(playerKnightPrefab, 120f);
     }
 
     public void SpawnBishop()
     {
-        SpawnPlayerUnit(playerBishopPrefab, 50);
+        SpawnPlayerUnit(playerBishopPrefab, 130f);
     }
 
     public void SpawnQueen()
     {
-        SpawnPlayerUnit(playerQueenPrefab, 60);
+        SpawnPlayerUnit(playerQueenPrefab, 300f);
     }
 
     public void SpawnKing()
     {
-        SpawnPlayerUnit(playerKingPrefab, 80);
+        SpawnPlayerUnit(playerKingPrefab, 250f);
+    }
+
+    private void SpawnPlayerUnit(GameObject prefab, float cost)
+    {
+        if (!Application.isPlaying || !IsPlaying)
+        {
+            return;
+        }
+
+        if (prefab == null)
+        {
+            Debug.LogWarning("Player unit prefab missing.");
+            return;
+        }
+
+        if (!SpendMoney(cost))
+        {
+            return;
+        }
+
+        GameObject unitObject = Instantiate(prefab, GetSpawnPosition(Team.Player), Quaternion.identity);
+        ChessUnit unit = unitObject.GetComponent<ChessUnit>();
+        if (unit != null)
+        {
+            unit.Initialize(Team.Player);
+        }
+
+        RefreshSpawnCardVisuals();
+        UpdateUI();
     }
 
     public void SpawnRandomEnemy()
     {
-        GameObject prefab = ChooseEnemyPrefab();
-        SpawnEnemyUnit(prefab);
-    }
-
-    private void ResolveReferences()
-    {
-        if (moneyText == null)
+        GameObject prefab = GetRandomEnemyPrefab();
+        if (prefab == null)
         {
-            GameObject moneyObject = GameObject.Find("Money");
-            if (moneyObject != null)
-            {
-                moneyText = moneyObject.GetComponent<TMP_Text>();
-            }
-        }
-
-        if (playerSpawnPoint == null)
-        {
-            GameObject playerBase = GameObject.Find("PlayerBase");
-            if (playerBase != null)
-            {
-                playerSpawnPoint = playerBase.transform;
-            }
-        }
-
-        if (enemySpawnPoint == null)
-        {
-            GameObject enemyBase = GameObject.Find("EnemyBase");
-            if (enemyBase != null)
-            {
-                enemySpawnPoint = enemyBase.transform;
-            }
-        }
-
-        if (buttonRow == null)
-        {
-            GameObject cardsPanelObject = GameObject.Find("CardsPanel");
-            if (cardsPanelObject != null)
-            {
-                buttonRow = cardsPanelObject.GetComponent<RectTransform>();
-            }
-        }
-
-        if (templateButton == null)
-        {
-            Button pawnButton = FindCardButton("Pawn");
-            if (pawnButton != null)
-            {
-                templateButton = pawnButton;
-            }
-        }
-
-        if (templateText == null)
-        {
-            if (templateButton != null)
-            {
-                templateText = templateButton.GetComponentInChildren<TMP_Text>(true);
-            }
-
-            if (templateText == null)
-            {
-                templateText = moneyText;
-            }
-        }
-    }
-
-    private void SyncSceneCards()
-    {
-        if (syncingSceneCards)
-        {
+            Debug.LogWarning("Enemy unit prefab missing.");
             return;
         }
 
-        syncingSceneCards = true;
-
-        try
+        GameObject unitObject = Instantiate(prefab, GetSpawnPosition(Team.Enemy), Quaternion.identity);
+        ChessUnit unit = unitObject.GetComponent<ChessUnit>();
+        if (unit != null)
         {
-            ResolveReferences();
-            if (buttonRow == null)
-            {
-                return;
-            }
-
-            for (int i = 0; i < CardDefinitions.Length; i++)
-            {
-                EnsureSceneCard(CardDefinitions[i], i);
-            }
-
-            ApplySceneCardLayout();
-        }
-        finally
-        {
-            syncingSceneCards = false;
+            unit.Initialize(Team.Enemy, EnemyHpMultiplier(), EnemyDamageMultiplier(), 1f);
         }
     }
 
-    private void EnsureSceneCard(CardDefinition definition, int siblingIndex)
+    private GameObject GetRandomEnemyPrefab()
     {
-        Button button = FindCardButton(definition.label);
-        if (button == null)
+        int roll = Random.Range(0, 100);
+
+        if (currentMode == GameMode.Endless)
         {
-            button = CreateCardButton(definition.label);
+            int d = endlessDifficulty;
+            if (d < 2)
+            {
+                return enemyPawnPrefab;
+            }
+
+            if (d < 4)
+            {
+                return roll < 70 ? enemyPawnPrefab : enemyKnightPrefab;
+            }
+
+            if (d < 7)
+            {
+                if (roll < 50) return enemyPawnPrefab;
+                if (roll < 70) return enemyKnightPrefab;
+                if (roll < 85) return enemyRookPrefab;
+                return enemyBishopPrefab;
+            }
+
+            if (roll < 35) return enemyPawnPrefab;
+            if (roll < 55) return enemyKnightPrefab;
+            if (roll < 70) return enemyRookPrefab;
+            if (roll < 85) return enemyBishopPrefab;
+            if (roll < 95) return enemyQueenPrefab;
+            return enemyKingPrefab;
         }
 
-        if (button == null)
+        if (roll < 45) return enemyPawnPrefab;
+        if (roll < 60) return enemyKnightPrefab;
+        if (roll < 75) return enemyBishopPrefab;
+        if (roll < 88) return enemyRookPrefab;
+        if (roll < 96) return enemyKingPrefab;
+        return enemyQueenPrefab;
+    }
+
+    private Vector3 GetSpawnPosition(Team team)
+    {
+        Transform anchor = team == Team.Player ? playerSpawnPoint : enemySpawnPoint;
+        if (anchor != null)
         {
-            return;
+            return anchor.position;
         }
 
-        button.name = definition.label;
-        button.transform.SetSiblingIndex(siblingIndex);
-
-        Image backgroundImage = button.GetComponent<Image>();
-        if (backgroundImage == null)
+        ChessBase fallbackBase = team == Team.Player ? playerBase : enemyBase;
+        float offset = team == Team.Player ? playerBaseOffset : -enemyBaseOffset;
+        if (fallbackBase != null)
         {
-            backgroundImage = button.gameObject.AddComponent<Image>();
+            return fallbackBase.transform.position + new Vector3(offset, 0f, 0f);
         }
 
-        backgroundImage.sprite = GetCardBackgroundSprite();
-        backgroundImage.type = Image.Type.Simple;
-        backgroundImage.color = GetCardBackgroundColor(definition.tint);
-        backgroundImage.preserveAspect = false;
-        backgroundImage.raycastTarget = true;
+        return Vector3.zero;
+    }
 
-        button.targetGraphic = backgroundImage;
-        button.transition = Selectable.Transition.ColorTint;
-
-        Image iconImage = EnsureIconChild(button.transform);
-        TMP_Text nameText = EnsureTextChild(button.transform, "Name", true);
-        TMP_Text costText = EnsureTextChild(button.transform, "Cost", false);
-
-        if (iconImage != null)
+    private bool SpendMoney(float cost)
+    {
+        if (money < cost || !IsPlaying)
         {
-            iconImage.sprite = GetSpawnIconSprite(definition.label);
-            iconImage.type = Image.Type.Simple;
-            iconImage.color = Color.white;
-            iconImage.preserveAspect = true;
-            iconImage.raycastTarget = false;
+            return false;
         }
 
-        if (nameText != null)
-        {
-            nameText.text = definition.label;
-            nameText.alignment = TextAlignmentOptions.Center;
-            nameText.enableAutoSizing = true;
-            nameText.fontSizeMin = 18f;
-            nameText.fontSizeMax = 28f;
-            nameText.fontStyle = FontStyles.Bold;
-            nameText.color = Color.white;
-            nameText.raycastTarget = false;
-        }
+        money -= cost;
+        RefreshSpawnCardVisuals();
+        UpdateUI();
+        return true;
+    }
 
-        if (costText != null)
+    private void StopAllUnits()
+    {
+        ChessUnit[] units = FindObjectsByType<ChessUnit>(FindObjectsSortMode.None);
+        foreach (ChessUnit unit in units)
         {
-            costText.text = "$" + definition.cost;
-            costText.alignment = TextAlignmentOptions.TopRight;
-            costText.enableAutoSizing = true;
-            costText.fontSizeMin = 18f;
-            costText.fontSizeMax = 26f;
-            costText.fontStyle = FontStyles.Bold;
-            costText.color = new Color(1f, 0.92f, 0.55f, 1f);
-            costText.raycastTarget = false;
+            if (unit == null)
+            {
+                continue;
+            }
+
+            Rigidbody2D rb = unit.GetComponent<Rigidbody2D>();
+            if (rb != null)
+            {
+                rb.velocity = Vector2.zero;
+            }
         }
     }
 
-    private Button CreateCardButton(string label)
+    private void ShowResult(string message)
     {
-        if (buttonRow == null)
+        if (resultPanel != null)
         {
-            return null;
+            resultPanel.SetActive(true);
         }
 
-        GameObject go = new GameObject(label, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
-        go.transform.SetParent(buttonRow, false);
-
-        Button button = go.GetComponent<Button>();
-        Image image = go.GetComponent<Image>();
-        image.sprite = GetCardBackgroundSprite();
-        image.type = Image.Type.Simple;
-        image.raycastTarget = true;
-
-        button.targetGraphic = image;
-        button.transition = Selectable.Transition.ColorTint;
-
-        if (templateButton != null)
+        if (resultText != null)
         {
-            button.navigation = templateButton.navigation;
+            resultText.text = message;
         }
-
-        return button;
     }
 
-    private Image EnsureIconChild(Transform parent)
+    private void UpdateUI()
     {
-        Transform iconTransform = FindDirectChild(parent, "Icon");
-        if (iconTransform != null)
+        if (modeText != null)
         {
-            Image existingImage = iconTransform.GetComponent<Image>();
-            if (existingImage != null)
-            {
-                return existingImage;
-            }
+            modeText.text = "Mode: " + currentMode;
         }
 
-        GameObject iconObject = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        iconObject.transform.SetParent(parent, false);
-        return iconObject.GetComponent<Image>();
+        if (scoreText != null)
+        {
+            scoreText.gameObject.SetActive(currentMode == GameMode.Endless);
+            scoreText.text = "Score: " + endlessScore;
+        }
+
+        if (moneyText != null)
+        {
+            moneyText.text = "Gold: " + Mathf.FloorToInt(money) + " / " + Mathf.FloorToInt(maxMoney);
+        }
+
+        if (restartButton != null)
+        {
+            restartButton.interactable = currentMode == GameMode.Level && currentState != GameState.Playing;
+        }
+
+        RefreshSpawnCardVisuals();
     }
 
-    private TMP_Text EnsureTextChild(Transform parent, string childName, bool reuseAnyDirectText)
+    private void RefreshSpawnCardVisuals()
     {
-        Transform childTransform = FindDirectChild(parent, childName);
-        if (childTransform != null)
+        for (int i = 0; i < SpawnDefinitions.Length; i++)
         {
-            TMP_Text existingText = childTransform.GetComponent<TMP_Text>();
-            if (existingText != null)
+            SpawnDefinition def = SpawnDefinitions[i];
+            GameObject card = GameObject.Find(def.label);
+            if (card == null)
             {
-                return existingText;
+                continue;
+            }
+
+            Button button = card.GetComponent<Button>();
+            if (button != null)
+            {
+                button.interactable = IsPlaying && money >= def.cost;
+            }
+
+            TMP_Text nameText = FindChildText(card.transform, "Name");
+            if (nameText != null)
+            {
+                nameText.text = def.label;
+            }
+
+            TMP_Text costText = FindChildText(card.transform, "Cost");
+            if (costText != null)
+            {
+                costText.text = "$" + Mathf.FloorToInt(def.cost);
+            }
+
+            Image iconImage = FindChildImage(card.transform, "Icon");
+            if (iconImage != null)
+            {
+                iconImage.sprite = GetSpawnIconSprite(def.label);
+                iconImage.preserveAspect = true;
             }
         }
-
-        if (reuseAnyDirectText)
-        {
-            TMP_Text reusableText = FindFirstDirectTextChild(parent);
-            if (reusableText != null)
-            {
-                reusableText.name = childName;
-                return reusableText;
-            }
-        }
-
-        GameObject textObject;
-        TMP_Text textComponent;
-
-        if (templateText != null)
-        {
-            textObject = Instantiate(templateText.gameObject);
-            textObject.name = childName;
-            textObject.transform.SetParent(parent, false);
-            textComponent = textObject.GetComponent<TMP_Text>();
-        }
-        else
-        {
-            textObject = new GameObject(childName, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-            textObject.transform.SetParent(parent, false);
-            textComponent = textObject.GetComponent<TextMeshProUGUI>();
-        }
-
-        return textComponent;
     }
 
-    private TMP_Text FindFirstDirectTextChild(Transform parent)
+    private TMP_Text FindChildText(Transform parent, string childName)
     {
-        for (int i = 0; i < parent.childCount; i++)
-        {
-            TMP_Text text = parent.GetChild(i).GetComponent<TMP_Text>();
-            if (text != null)
-            {
-                return text;
-            }
-        }
+        Transform child = FindDirectChild(parent, childName);
+        return child != null ? child.GetComponent<TMP_Text>() : null;
+    }
 
-        return null;
+    private Image FindChildImage(Transform parent, string childName)
+    {
+        Transform child = FindDirectChild(parent, childName);
+        return child != null ? child.GetComponent<Image>() : null;
     }
 
     private Transform FindDirectChild(Transform parent, string childName)
@@ -453,164 +668,416 @@ public class ChessGameManager : MonoBehaviour
         return null;
     }
 
-    private void BuildSpawnButtons()
+    private Button FindButton(string name)
     {
-        SyncSceneCards();
-        spawnButtons.Clear();
+        GameObject go = GameObject.Find(name);
+        return go != null ? go.GetComponent<Button>() : null;
+    }
 
-        for (int i = 0; i < CardDefinitions.Length; i++)
+    private void ResolveReferences()
+    {
+        if (playerBase == null)
         {
-            CardDefinition definition = CardDefinitions[i];
-            Button button = FindCardButton(definition.label);
-            if (button == null)
+            GameObject playerBaseObject = GameObject.Find("PlayerBase");
+            if (playerBaseObject != null)
             {
-                continue;
+                playerBase = playerBaseObject.GetComponent<ChessBase>();
+            }
+        }
+
+        if (enemyBase == null)
+        {
+            GameObject enemyBaseObject = GameObject.Find("EnemyBase");
+            if (enemyBaseObject != null)
+            {
+                enemyBase = enemyBaseObject.GetComponent<ChessBase>();
+            }
+        }
+
+        if (moneyText == null)
+        {
+            GameObject moneyObject = GameObject.Find("MoneyText");
+            if (moneyObject == null)
+            {
+                moneyObject = GameObject.Find("Money");
             }
 
-            SpawnButtonSpec spec = CreateSpec(button, definition, GetSpawnAction(definition.label));
-            spawnButtons.Add(spec);
-        }
-
-        ApplyButtonTransforms();
-    }
-
-    private SpawnButtonSpec CreateSpec(Button button, CardDefinition definition, Action action)
-    {
-        SpawnButtonSpec spec = new SpawnButtonSpec();
-        spec.definition = definition;
-        spec.action = action;
-        spec.button = button;
-        spec.backgroundImage = button != null ? button.GetComponent<Image>() : null;
-        spec.iconImage = FindImageChild(button != null ? button.transform : null, "Icon");
-        spec.nameText = FindTextChild(button != null ? button.transform : null, "Name");
-        spec.costText = FindTextChild(button != null ? button.transform : null, "Cost");
-
-        if (spec.button != null)
-        {
-            spec.button.onClick = new Button.ButtonClickedEvent();
-            spec.button.onClick.AddListener(() => spec.action?.Invoke());
-        }
-
-        ApplySpecVisuals(spec);
-        return spec;
-    }
-
-    private Image FindImageChild(Transform parent, string childName)
-    {
-        Transform child = FindDirectChild(parent, childName);
-        return child != null ? child.GetComponent<Image>() : null;
-    }
-
-    private TMP_Text FindTextChild(Transform parent, string childName)
-    {
-        Transform child = FindDirectChild(parent, childName);
-        return child != null ? child.GetComponent<TMP_Text>() : null;
-    }
-
-    private Action GetSpawnAction(string label)
-    {
-        switch (label)
-        {
-            case "Pawn":
-                return SpawnPawn;
-            case "Rook":
-                return SpawnRook;
-            case "Knight":
-                return SpawnKnight;
-            case "Bishop":
-                return SpawnBishop;
-            case "Queen":
-                return SpawnQueen;
-            case "King":
-                return SpawnKing;
-            default:
-                return null;
-        }
-    }
-
-    private void ApplySpecVisuals(SpawnButtonSpec spec)
-    {
-        if (spec.button != null)
-        {
-            spec.button.interactable = money >= spec.definition.cost && !battleEnded;
-
-            ColorBlock colors = spec.button.colors;
-            colors.normalColor = spec.definition.tint;
-            colors.highlightedColor = Color.Lerp(spec.definition.tint, Color.white, 0.18f);
-            colors.pressedColor = Color.Lerp(spec.definition.tint, Color.black, 0.12f);
-            colors.disabledColor = new Color(spec.definition.tint.r * 0.45f, spec.definition.tint.g * 0.45f, spec.definition.tint.b * 0.45f, 0.5f);
-            colors.selectedColor = colors.highlightedColor;
-            spec.button.colors = colors;
-        }
-
-        if (spec.backgroundImage != null)
-        {
-            spec.backgroundImage.sprite = GetCardBackgroundSprite();
-            spec.backgroundImage.type = Image.Type.Simple;
-            spec.backgroundImage.color = GetCardBackgroundColor(spec.definition.tint);
-            spec.backgroundImage.preserveAspect = false;
-        }
-
-        if (spec.iconImage != null)
-        {
-            spec.iconImage.sprite = GetSpawnIconSprite(spec.definition.label);
-            spec.iconImage.type = Image.Type.Simple;
-            spec.iconImage.preserveAspect = true;
-            spec.iconImage.color = Color.white;
-        }
-
-        if (spec.nameText != null)
-        {
-            spec.nameText.text = spec.definition.label;
-            spec.nameText.alignment = TextAlignmentOptions.Center;
-            spec.nameText.enableAutoSizing = true;
-            spec.nameText.fontSizeMin = 18f;
-            spec.nameText.fontSizeMax = 28f;
-            spec.nameText.fontStyle = FontStyles.Bold;
-            spec.nameText.color = Color.white;
-        }
-
-        if (spec.costText != null)
-        {
-            spec.costText.text = "$" + spec.definition.cost;
-            spec.costText.alignment = TextAlignmentOptions.TopRight;
-            spec.costText.enableAutoSizing = true;
-            spec.costText.fontSizeMin = 18f;
-            spec.costText.fontSizeMax = 26f;
-            spec.costText.fontStyle = FontStyles.Bold;
-            spec.costText.color = new Color(1f, 0.92f, 0.55f, 1f);
-        }
-    }
-
-    private Color GetCardBackgroundColor(Color tint)
-    {
-        Color background = Color.Lerp(tint, new Color(0.08f, 0.1f, 0.14f, 1f), 0.55f);
-        background.a = 0.96f;
-        return background;
-    }
-
-    private Sprite GetCardBackgroundSprite()
-    {
-        if (cardBackgroundSprite != null)
-        {
-            return cardBackgroundSprite;
-        }
-
-        if (cardBackgroundTexture == null)
-        {
-            cardBackgroundTexture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-            cardBackgroundTexture.hideFlags = HideFlags.HideAndDontSave;
-            cardBackgroundTexture.SetPixels(new[]
+            if (moneyObject != null)
             {
-                Color.white, Color.white,
-                Color.white, Color.white
-            });
-            cardBackgroundTexture.Apply();
+                moneyText = moneyObject.GetComponent<TMP_Text>();
+                if (moneyText != null && moneyText.gameObject.name == "Money")
+                {
+                    moneyText.gameObject.name = "MoneyText";
+                }
+            }
         }
 
-        cardBackgroundSprite = Sprite.Create(cardBackgroundTexture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 2f);
-        cardBackgroundSprite.hideFlags = HideFlags.HideAndDontSave;
-        return cardBackgroundSprite;
+        if (moneyText != null && moneyText.gameObject.name == "Money")
+        {
+            moneyText.gameObject.name = "MoneyText";
+        }
+
+        if (modeText == null)
+        {
+            GameObject modeObject = GameObject.Find("ModeText");
+            if (modeObject != null)
+            {
+                modeText = modeObject.GetComponent<TMP_Text>();
+            }
+        }
+
+        if (scoreText == null)
+        {
+            GameObject scoreObject = GameObject.Find("ScoreText");
+            if (scoreObject != null)
+            {
+                scoreText = scoreObject.GetComponent<TMP_Text>();
+            }
+        }
+
+        if (resultPanel == null)
+        {
+            GameObject panelObject = GameObject.Find("ResultPanel");
+            if (panelObject != null)
+            {
+                resultPanel = panelObject;
+            }
+        }
+
+        if (resultText == null && resultPanel != null)
+        {
+            Transform resultTextTransform = resultPanel.transform.Find("ResultText");
+            if (resultTextTransform != null)
+            {
+                resultText = resultTextTransform.GetComponent<TMP_Text>();
+            }
+        }
+
+        if (restartButton == null && resultPanel != null)
+        {
+            Transform restartButtonTransform = resultPanel.transform.Find("RestartButton");
+            if (restartButtonTransform != null)
+            {
+                restartButton = restartButtonTransform.GetComponent<Button>();
+            }
+        }
+
+        if (playerSpawnPoint == null)
+        {
+            GameObject playerSpawnObject = GameObject.Find("PlayerSpawnPoint");
+            if (playerSpawnObject != null)
+            {
+                playerSpawnPoint = playerSpawnObject.transform;
+            }
+        }
+
+        if (enemySpawnPoint == null)
+        {
+            GameObject enemySpawnObject = GameObject.Find("EnemySpawnPoint");
+            if (enemySpawnObject != null)
+            {
+                enemySpawnPoint = enemySpawnObject.transform;
+            }
+        }
+
+        if (playerBase != null && playerSpawnPoint != null && playerSpawnPoint.IsChildOf(playerBase.transform))
+        {
+            playerSpawnPoint = CreateSpawnPoint("PlayerSpawnPoint", playerBase, playerSpawnPoint.position);
+        }
+
+        if (enemyBase != null && enemySpawnPoint != null && enemySpawnPoint.IsChildOf(enemyBase.transform))
+        {
+            enemySpawnPoint = CreateSpawnPoint("EnemySpawnPoint", enemyBase, enemySpawnPoint.position);
+        }
+    }
+
+    private void BindRuntimeButtons()
+    {
+        if (restartButton != null)
+        {
+            restartButton.onClick.RemoveListener(RestartScene);
+            restartButton.onClick.AddListener(RestartScene);
+        }
+    }
+
+    private void EnsureSceneSetup()
+    {
+        ResolveReferences();
+
+        if (moneyText == null || modeText == null || scoreText == null || resultPanel == null || resultText == null || restartButton == null || playerSpawnPoint == null || enemySpawnPoint == null)
+        {
+            Canvas canvas = FindCanvas();
+            if (canvas == null)
+            {
+                return;
+            }
+
+        if (moneyText == null)
+        {
+            EnsureMoneyText(canvas.transform);
+        }
+
+            if (modeText == null)
+            {
+                modeText = CreateText(
+                    "ModeText",
+                    canvas.transform,
+                    "Mode: Level",
+                    new Vector2(0f, 1f),
+                    new Vector2(0f, 1f),
+                    new Vector2(0f, 1f),
+                    new Vector2(24f, -24f),
+                    new Vector2(280f, 42f),
+                    Color.white,
+                    26f);
+            }
+
+            if (scoreText == null)
+            {
+                scoreText = CreateText(
+                    "ScoreText",
+                    canvas.transform,
+                    "Score: 0",
+                    new Vector2(0.5f, 1f),
+                    new Vector2(0.5f, 1f),
+                    new Vector2(0.5f, 1f),
+                    new Vector2(0f, -24f),
+                    new Vector2(280f, 42f),
+                    new Color(1f, 0.92f, 0.55f, 1f),
+                    26f);
+            }
+
+            if (resultPanel == null)
+            {
+                resultPanel = CreateResultPanel(canvas.transform);
+            }
+
+            if (resultText == null && resultPanel != null)
+            {
+                resultText = CreateText(
+                    "ResultText",
+                    resultPanel.transform,
+                    "Victory",
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0.5f, 0.5f),
+                    new Vector2(0f, 54f),
+                    new Vector2(520f, 120f),
+                    Color.white,
+                    54f);
+                resultText.alignment = TextAlignmentOptions.Center;
+            }
+
+            if (restartButton == null && resultPanel != null)
+            {
+                restartButton = CreateRestartButton(resultPanel.transform);
+            }
+
+            if (playerSpawnPoint == null)
+            {
+                playerSpawnPoint = CreateSpawnPoint("PlayerSpawnPoint", playerBase, new Vector3(playerBase != null ? playerBase.transform.position.x + playerBaseOffset : -7f, 0f, 0f));
+            }
+
+            if (enemySpawnPoint == null)
+            {
+                enemySpawnPoint = CreateSpawnPoint("EnemySpawnPoint", enemyBase, new Vector3(enemyBase != null ? enemyBase.transform.position.x - enemyBaseOffset : 7f, 0f, 0f));
+            }
+        }
+
+        ResolveReferences();
+        BindRuntimeButtons();
+        RefreshSpawnCardVisuals();
+        UpdateUI();
+    }
+
+    private Canvas FindCanvas()
+    {
+        GameObject canvasObject = GameObject.Find("Canvas");
+        if (canvasObject != null)
+        {
+            Canvas canvas = canvasObject.GetComponent<Canvas>();
+            if (canvas != null)
+            {
+                return canvas;
+            }
+        }
+
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsSortMode.None);
+        return canvases != null && canvases.Length > 0 ? canvases[0] : null;
+    }
+
+    private TMP_Text EnsureMoneyText(Transform parent)
+    {
+        GameObject moneyObject = GameObject.Find("MoneyText");
+        if (moneyObject == null)
+        {
+            moneyObject = GameObject.Find("Money");
+        }
+
+        if (moneyObject != null)
+        {
+            moneyText = moneyObject.GetComponent<TMP_Text>();
+            if (moneyText != null)
+            {
+                moneyText.gameObject.name = "MoneyText";
+                return moneyText;
+            }
+        }
+
+        moneyText = CreateText(
+            "MoneyText",
+            parent,
+            "Gold: 100 / 500",
+            new Vector2(1f, 1f),
+            new Vector2(1f, 1f),
+            new Vector2(1f, 1f),
+            new Vector2(-24f, -24f),
+            new Vector2(300f, 42f),
+            new Color(1f, 0.92f, 0.55f, 1f),
+            26f);
+        return moneyText;
+    }
+
+    private GameObject CreateResultPanel(Transform parent)
+    {
+        GameObject panel = new GameObject("ResultPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        panel.transform.SetParent(parent, false);
+
+        RectTransform rect = panel.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        Image image = panel.GetComponent<Image>();
+        image.sprite = ChessCombatFx.GetDefaultSprite();
+        image.type = Image.Type.Simple;
+        image.color = new Color(0f, 0f, 0f, 0.72f);
+        image.raycastTarget = true;
+
+        panel.SetActive(false);
+        return panel;
+    }
+
+    private Button CreateRestartButton(Transform parent)
+    {
+        GameObject buttonObject = new GameObject("RestartButton", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+
+        RectTransform rect = buttonObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(260f, 72f);
+        rect.anchoredPosition = new Vector2(0f, -42f);
+
+        Image image = buttonObject.GetComponent<Image>();
+        image.sprite = ChessCombatFx.GetDefaultSprite();
+        image.color = new Color(0.22f, 0.26f, 0.34f, 0.95f);
+        image.raycastTarget = true;
+
+        Button button = buttonObject.GetComponent<Button>();
+        button.targetGraphic = image;
+        button.onClick.RemoveAllListeners();
+        button.onClick.AddListener(RestartScene);
+
+        TMP_Text label = CreateText(
+            "RestartLabel",
+            buttonObject.transform,
+            "Restart",
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            Vector2.zero,
+            new Vector2(240f, 50f),
+            Color.white,
+            28f);
+        label.alignment = TextAlignmentOptions.Center;
+
+        return button;
+    }
+
+    private Transform CreateSpawnPoint(string name, ChessBase baseObject, Vector3 fallbackPosition)
+    {
+        GameObject spawnPoint = GameObject.Find(name);
+        if (spawnPoint == null)
+        {
+            spawnPoint = new GameObject(name);
+        }
+
+        spawnPoint.transform.SetParent(null, true);
+        spawnPoint.transform.position = fallbackPosition;
+
+        if (baseObject != null)
+        {
+            float xOffset = name == "PlayerSpawnPoint" ? playerBaseOffset : -enemyBaseOffset;
+            spawnPoint.transform.position = baseObject.transform.position + new Vector3(xOffset, 0f, 0f);
+        }
+
+        return spawnPoint.transform;
+    }
+
+    private TMP_Text CreateText(
+        string name,
+        Transform parent,
+        string value,
+        Vector2 anchorMin,
+        Vector2 anchorMax,
+        Vector2 pivot,
+        Vector2 anchoredPosition,
+        Vector2 sizeDelta,
+        Color color,
+        float fontSize)
+    {
+        GameObject go = GameObject.Find(name);
+        TextMeshProUGUI text;
+
+        if (go == null)
+        {
+            go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            go.transform.SetParent(parent, false);
+        }
+        else if (go.transform.parent != parent)
+        {
+            go.transform.SetParent(parent, false);
+        }
+
+        RectTransform rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = pivot;
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = sizeDelta;
+
+        text = go.GetComponent<TextMeshProUGUI>();
+        if (TMP_Settings.defaultFontAsset != null)
+        {
+            text.font = TMP_Settings.defaultFontAsset;
+        }
+
+        text.text = value;
+        text.color = color;
+        text.fontSize = fontSize;
+        text.enableAutoSizing = true;
+        text.fontSizeMin = Mathf.Max(14f, fontSize * 0.7f);
+        text.fontSizeMax = fontSize;
+        text.alignment = TextAlignmentOptions.Left;
+        text.raycastTarget = false;
+
+        return text;
+    }
+
+    private void RefreshSpawnButtonInteractability()
+    {
+        for (int i = 0; i < SpawnDefinitions.Length; i++)
+        {
+            SpawnDefinition def = SpawnDefinitions[i];
+            Button button = FindButton(def.label);
+            if (button != null)
+            {
+                button.interactable = IsPlaying && money >= def.cost;
+            }
+        }
     }
 
     private Sprite GetSpawnIconSprite(string label)
@@ -650,307 +1117,8 @@ public class ChessGameManager : MonoBehaviour
         return ChessCombatFx.GetDefaultSprite();
     }
 
-    private void ApplySceneCardLayout()
+    public void RestartScene()
     {
-        if (buttonRow == null)
-        {
-            return;
-        }
-
-        Canvas.ForceUpdateCanvases();
-
-        float panelWidth = buttonRow.rect.width;
-        if (panelWidth <= 1f)
-        {
-            panelWidth = 1920f;
-        }
-
-        float count = CardDefinitions.Length;
-        float minMargin = 80f;
-        float usableWidth = Mathf.Max(760f, panelWidth - minMargin * 2f);
-        float buttonWidth = Mathf.Clamp((usableWidth - 16f * (count - 1f)) / count, 118f, 180f);
-        float gap = count > 1f ? Mathf.Clamp((usableWidth - buttonWidth * count) / (count - 1f), 12f, 32f) : 0f;
-        float totalWidth = buttonWidth * count + gap * (count - 1f);
-        float startX = -totalWidth * 0.5f + buttonWidth * 0.5f;
-        float buttonHeight = 182f;
-
-        for (int i = 0; i < CardDefinitions.Length; i++)
-        {
-            Button button = FindCardButton(CardDefinitions[i].label);
-            if (button == null)
-            {
-                continue;
-            }
-
-            RectTransform rect = button.transform as RectTransform;
-            if (rect == null)
-            {
-                continue;
-            }
-
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(buttonWidth, buttonHeight);
-            rect.anchoredPosition = new Vector2(startX + i * (buttonWidth + gap), 0f);
-
-            ApplyCardChildLayout(button.transform, buttonWidth, buttonHeight);
-        }
-    }
-
-    private void ApplyButtonTransforms()
-    {
-        if (buttonRow == null || spawnButtons.Count == 0)
-        {
-            return;
-        }
-
-        ApplySceneCardLayout();
-    }
-
-    private void ApplyCardChildLayout(Transform cardTransform, float width, float height)
-    {
-        Image iconImage = FindImageChild(cardTransform, "Icon");
-        TMP_Text nameText = FindTextChild(cardTransform, "Name");
-        TMP_Text costText = FindTextChild(cardTransform, "Cost");
-
-        if (iconImage != null)
-        {
-            RectTransform iconRect = iconImage.rectTransform;
-            float iconSize = Mathf.Clamp(width * 0.56f, 72f, 102f);
-            iconRect.anchorMin = new Vector2(0.5f, 0.62f);
-            iconRect.anchorMax = new Vector2(0.5f, 0.62f);
-            iconRect.pivot = new Vector2(0.5f, 0.5f);
-            iconRect.sizeDelta = new Vector2(iconSize, iconSize);
-            iconRect.anchoredPosition = new Vector2(0f, height * 0.04f);
-        }
-
-        if (nameText != null)
-        {
-            RectTransform nameRect = nameText.rectTransform;
-            nameRect.anchorMin = new Vector2(0.5f, 0f);
-            nameRect.anchorMax = new Vector2(0.5f, 0f);
-            nameRect.pivot = new Vector2(0.5f, 0f);
-            nameRect.sizeDelta = new Vector2(width - 22f, 42f);
-            nameRect.anchoredPosition = new Vector2(0f, 12f);
-
-            nameText.fontSize = Mathf.Clamp(width * 0.18f, 18f, 28f);
-        }
-
-        if (costText != null)
-        {
-            RectTransform costRect = costText.rectTransform;
-            costRect.anchorMin = new Vector2(1f, 1f);
-            costRect.anchorMax = new Vector2(1f, 1f);
-            costRect.pivot = new Vector2(1f, 1f);
-            costRect.sizeDelta = new Vector2(width * 0.38f, 34f);
-            costRect.anchoredPosition = new Vector2(-10f, -8f);
-
-            costText.fontSize = Mathf.Clamp(width * 0.19f, 18f, 26f);
-        }
-    }
-
-    private Button FindCardButton(string label)
-    {
-        if (buttonRow == null)
-        {
-            return null;
-        }
-
-        Transform cardTransform = FindDirectChild(buttonRow, label);
-        return cardTransform != null ? cardTransform.GetComponent<Button>() : null;
-    }
-
-    private void TickMoney()
-    {
-        moneyCarry += moneyPerSecond * Time.deltaTime;
-        int gained = Mathf.FloorToInt(moneyCarry);
-
-        if (gained > 0)
-        {
-            money += gained;
-            moneyCarry -= gained;
-            RefreshMoneyUI();
-        }
-    }
-
-    private void TickEnemySpawner()
-    {
-        enemySpawnTimer -= Time.deltaTime;
-        if (enemySpawnTimer > 0f)
-        {
-            return;
-        }
-
-        SpawnRandomEnemy();
-        enemySpawnTimer = Mathf.Max(0.3f, enemySpawnInterval);
-    }
-
-    private void HandleHotkeys()
-    {
-        if (battleEnded)
-        {
-            return;
-        }
-
-        for (int i = 0; i < spawnButtons.Count; i++)
-        {
-            SpawnButtonSpec spec = spawnButtons[i];
-            if (Input.GetKeyDown(spec.definition.hotkey))
-            {
-                spec.action?.Invoke();
-            }
-        }
-    }
-
-    private void RefreshButtonStates()
-    {
-        for (int i = 0; i < spawnButtons.Count; i++)
-        {
-            SpawnButtonSpec spec = spawnButtons[i];
-            if (spec.button == null)
-            {
-                continue;
-            }
-
-            spec.button.interactable = !battleEnded && money >= spec.definition.cost;
-        }
-    }
-
-    private void RefreshMoneyUI()
-    {
-        if (moneyText != null)
-        {
-            moneyText.text = "$" + money;
-        }
-    }
-
-    private void CheckBattleState()
-    {
-        ChessBase[] bases = FindObjectsByType<ChessBase>(FindObjectsSortMode.None);
-        bool playerDead = false;
-        bool enemyDead = false;
-
-        for (int i = 0; i < bases.Length; i++)
-        {
-            ChessBase chessBase = bases[i];
-            if (chessBase == null)
-            {
-                continue;
-            }
-
-            if (chessBase.team == Team.Player && chessBase.currentHp <= 0f)
-            {
-                playerDead = true;
-            }
-
-            if (chessBase.team == Team.Enemy && chessBase.currentHp <= 0f)
-            {
-                enemyDead = true;
-            }
-        }
-
-        if (playerDead || enemyDead)
-        {
-            battleEnded = true;
-        }
-    }
-
-    private void SpawnPlayerUnit(GameObject prefab, int cost)
-    {
-        if (!SpendMoney(cost))
-        {
-            return;
-        }
-
-        SpawnUnit(prefab, Team.Player);
-    }
-
-    private void SpawnEnemyUnit(GameObject prefab)
-    {
-        SpawnUnit(prefab, Team.Enemy);
-    }
-
-    private GameObject SpawnUnit(GameObject prefab, Team team)
-    {
-        if (prefab == null)
-        {
-            return null;
-        }
-
-        Vector3 spawnPosition = GetSpawnPosition(team);
-        GameObject instance = Instantiate(prefab, spawnPosition, Quaternion.identity);
-
-        ChessUnit unit = instance.GetComponent<ChessUnit>();
-        if (unit != null)
-        {
-            unit.team = team;
-        }
-
-        return instance;
-    }
-
-    private Vector3 GetSpawnPosition(Team team)
-    {
-        Transform anchor = team == Team.Player ? playerSpawnPoint : enemySpawnPoint;
-        Vector3 position = anchor != null ? anchor.position : Vector3.zero;
-        float direction = team == Team.Player ? 1f : -1f;
-        return position + new Vector3(direction * 0.85f, 0f, 0f);
-    }
-
-    private bool SpendMoney(int cost)
-    {
-        if (money < cost || battleEnded)
-        {
-            return false;
-        }
-
-        money -= cost;
-        RefreshMoneyUI();
-        RefreshButtonStates();
-        return true;
-    }
-
-    private GameObject ChooseEnemyPrefab()
-    {
-        float progress = Mathf.Clamp01(battleClock / 90f);
-        float roll = UnityEngine.Random.value;
-        float pawnChance = Mathf.Lerp(0.52f, 0.28f, progress);
-        float rookChance = Mathf.Lerp(0.72f, 0.52f, progress);
-        float knightChance = Mathf.Lerp(0.86f, 0.68f, progress);
-        float bishopChance = Mathf.Lerp(0.94f, 0.82f, progress);
-        float queenChance = Mathf.Lerp(0.985f, 0.93f, progress);
-
-        if (roll < pawnChance && enemyPawnPrefab != null)
-        {
-            return enemyPawnPrefab;
-        }
-
-        if (roll < rookChance && enemyRookPrefab != null)
-        {
-            return enemyRookPrefab;
-        }
-
-        if (roll < knightChance && enemyKnightPrefab != null)
-        {
-            return enemyKnightPrefab;
-        }
-
-        if (roll < bishopChance && enemyBishopPrefab != null)
-        {
-            return enemyBishopPrefab;
-        }
-
-        if (roll < queenChance && enemyQueenPrefab != null)
-        {
-            return enemyQueenPrefab;
-        }
-
-        if (enemyKingPrefab != null)
-        {
-            return enemyKingPrefab;
-        }
-
-        return enemyPawnPrefab;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 }
