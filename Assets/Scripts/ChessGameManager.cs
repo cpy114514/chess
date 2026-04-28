@@ -34,7 +34,7 @@ public class ChessGameManager : MonoBehaviour
 
     [Header("Mode")]
     public GameMode currentMode = GameMode.Level;
-    public GameState currentState = GameState.Playing;
+    public GameState currentState = GameState.Menu;
 
     [Header("Money")]
     public float money = 100f;
@@ -82,6 +82,12 @@ public class ChessGameManager : MonoBehaviour
     public float minimumEnemySpawnInterval = 1f;
 
     [Header("UI")]
+    public GameObject cardsPanel;
+    public GameObject startMenuPanel;
+    public TMP_Text startTitleText;
+    public TMP_Text startSubtitleText;
+    public Button startLevelButton;
+    public Button startEndlessButton;
     public TMP_Text modeText;
     public TMP_Text scoreText;
     public TMP_Text moneyText;
@@ -140,7 +146,7 @@ public class ChessGameManager : MonoBehaviour
         EnsureSceneSetup();
         ResolveReferences();
         BindRuntimeButtons();
-        StartGame();
+        ShowStartMenu();
     }
 
     private void Update()
@@ -181,6 +187,8 @@ public class ChessGameManager : MonoBehaviour
         ResolveReferences();
 
         currentState = GameState.Playing;
+        SetGameplayUiVisible(true);
+        HideStartMenu();
         if (resultPanel != null)
         {
             resultPanel.SetActive(false);
@@ -214,6 +222,21 @@ public class ChessGameManager : MonoBehaviour
     {
         currentMode = GameMode.Endless;
         StartGame();
+    }
+
+    public void ShowStartMenu()
+    {
+        ResolveReferences();
+
+        currentState = GameState.Menu;
+        SetGameplayUiVisible(false);
+
+        if (startMenuPanel != null)
+        {
+            startMenuPanel.SetActive(true);
+        }
+
+        UpdateUI();
     }
 
     private void SetupLevelMode()
@@ -604,7 +627,7 @@ public class ChessGameManager : MonoBehaviour
         for (int i = 0; i < SpawnDefinitions.Length; i++)
         {
             SpawnDefinition def = SpawnDefinitions[i];
-            GameObject card = GameObject.Find(def.label);
+            GameObject card = FindSpawnCard(def.label);
             if (card == null)
             {
                 continue;
@@ -635,6 +658,20 @@ public class ChessGameManager : MonoBehaviour
                 iconImage.preserveAspect = true;
             }
         }
+    }
+
+    private GameObject FindSpawnCard(string label)
+    {
+        if (cardsPanel != null)
+        {
+            Transform child = cardsPanel.transform.Find(label);
+            if (child != null)
+            {
+                return child.gameObject;
+            }
+        }
+
+        return GameObject.Find(label);
     }
 
     private TMP_Text FindChildText(Transform parent, string childName)
@@ -670,7 +707,7 @@ public class ChessGameManager : MonoBehaviour
 
     private Button FindButton(string name)
     {
-        GameObject go = GameObject.Find(name);
+        GameObject go = FindSpawnCard(name);
         return go != null ? go.GetComponent<Button>() : null;
     }
 
@@ -735,6 +772,15 @@ public class ChessGameManager : MonoBehaviour
             }
         }
 
+        if (cardsPanel == null)
+        {
+            GameObject cardsObject = GameObject.Find("CardsPanel");
+            if (cardsObject != null)
+            {
+                cardsPanel = cardsObject;
+            }
+        }
+
         if (resultPanel == null)
         {
             GameObject panelObject = GameObject.Find("ResultPanel");
@@ -780,6 +826,51 @@ public class ChessGameManager : MonoBehaviour
             }
         }
 
+        if (startMenuPanel == null)
+        {
+            GameObject startMenuObject = GameObject.Find("StartMenuPanel");
+            if (startMenuObject != null)
+            {
+                startMenuPanel = startMenuObject;
+            }
+        }
+
+        if (startTitleText == null && startMenuPanel != null)
+        {
+            Transform titleTransform = startMenuPanel.transform.Find("StartTitleText");
+            if (titleTransform != null)
+            {
+                startTitleText = titleTransform.GetComponent<TMP_Text>();
+            }
+        }
+
+        if (startSubtitleText == null && startMenuPanel != null)
+        {
+            Transform subtitleTransform = startMenuPanel.transform.Find("StartSubtitleText");
+            if (subtitleTransform != null)
+            {
+                startSubtitleText = subtitleTransform.GetComponent<TMP_Text>();
+            }
+        }
+
+        if (startLevelButton == null && startMenuPanel != null)
+        {
+            Transform startButtonTransform = startMenuPanel.transform.Find("StartLevelButton");
+            if (startButtonTransform != null)
+            {
+                startLevelButton = startButtonTransform.GetComponent<Button>();
+            }
+        }
+
+        if (startEndlessButton == null && startMenuPanel != null)
+        {
+            Transform endlessButtonTransform = startMenuPanel.transform.Find("StartEndlessButton");
+            if (endlessButtonTransform != null)
+            {
+                startEndlessButton = endlessButtonTransform.GetComponent<Button>();
+            }
+        }
+
         if (playerBase != null && playerSpawnPoint != null && playerSpawnPoint.IsChildOf(playerBase.transform))
         {
             playerSpawnPoint = CreateSpawnPoint("PlayerSpawnPoint", playerBase, playerSpawnPoint.position);
@@ -793,6 +884,9 @@ public class ChessGameManager : MonoBehaviour
 
     private void BindRuntimeButtons()
     {
+        BindSpawnButtons();
+        BindStartMenuButtons();
+
         if (restartButton != null)
         {
             restartButton.onClick.RemoveListener(RestartScene);
@@ -800,11 +894,67 @@ public class ChessGameManager : MonoBehaviour
         }
     }
 
+    private void BindSpawnButtons()
+    {
+        for (int i = 0; i < SpawnDefinitions.Length; i++)
+        {
+            SpawnDefinition def = SpawnDefinitions[i];
+            Button button = FindButton(def.label);
+            if (button == null)
+            {
+                continue;
+            }
+
+            button.onClick.RemoveAllListeners();
+            UnityEngine.Events.UnityAction action = GetSpawnAction(def.label);
+            if (action != null)
+            {
+                button.onClick.AddListener(action);
+            }
+        }
+    }
+
+    private UnityEngine.Events.UnityAction GetSpawnAction(string label)
+    {
+        switch (label)
+        {
+            case "Pawn":
+                return SpawnPawn;
+            case "Rook":
+                return SpawnRook;
+            case "Knight":
+                return SpawnKnight;
+            case "Bishop":
+                return SpawnBishop;
+            case "Queen":
+                return SpawnQueen;
+            case "King":
+                return SpawnKing;
+            default:
+                return null;
+        }
+    }
+
+    private void BindStartMenuButtons()
+    {
+        if (startLevelButton != null)
+        {
+            startLevelButton.onClick.RemoveListener(StartLevelMode);
+            startLevelButton.onClick.AddListener(StartLevelMode);
+        }
+
+        if (startEndlessButton != null)
+        {
+            startEndlessButton.onClick.RemoveListener(StartEndlessMode);
+            startEndlessButton.onClick.AddListener(StartEndlessMode);
+        }
+    }
+
     private void EnsureSceneSetup()
     {
         ResolveReferences();
 
-        if (moneyText == null || modeText == null || scoreText == null || resultPanel == null || resultText == null || restartButton == null || playerSpawnPoint == null || enemySpawnPoint == null)
+        if (moneyText == null || modeText == null || scoreText == null || resultPanel == null || resultText == null || restartButton == null || playerSpawnPoint == null || enemySpawnPoint == null || cardsPanel == null || startMenuPanel == null || startLevelButton == null || startEndlessButton == null)
         {
             Canvas canvas = FindCanvas();
             if (canvas == null)
@@ -812,10 +962,10 @@ public class ChessGameManager : MonoBehaviour
                 return;
             }
 
-        if (moneyText == null)
-        {
-            EnsureMoneyText(canvas.transform);
-        }
+            if (moneyText == null)
+            {
+                EnsureMoneyText(canvas.transform);
+            }
 
             if (modeText == null)
             {
@@ -830,6 +980,16 @@ public class ChessGameManager : MonoBehaviour
                     new Vector2(280f, 42f),
                     Color.white,
                     26f);
+            }
+
+            if (cardsPanel == null)
+            {
+                cardsPanel = GameObject.Find("CardsPanel");
+            }
+
+            if (startMenuPanel == null)
+            {
+                startMenuPanel = CreateStartMenuPanel(canvas.transform);
             }
 
             if (scoreText == null)
@@ -957,6 +1117,141 @@ public class ChessGameManager : MonoBehaviour
 
         panel.SetActive(false);
         return panel;
+    }
+
+    private GameObject CreateStartMenuPanel(Transform parent)
+    {
+        GameObject panel = new GameObject("StartMenuPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        panel.transform.SetParent(parent, false);
+
+        RectTransform rect = panel.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        Image image = panel.GetComponent<Image>();
+        image.sprite = ChessCombatFx.GetDefaultSprite();
+        image.type = Image.Type.Simple;
+        image.color = new Color(0.04f, 0.06f, 0.10f, 0.96f);
+        image.raycastTarget = true;
+
+        TMP_Text title = CreateText(
+            "StartTitleText",
+            panel.transform,
+            "Chess Lane Clash",
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0f, -118f),
+            new Vector2(760f, 90f),
+            Color.white,
+            62f);
+        title.alignment = TextAlignmentOptions.Center;
+
+        TMP_Text subtitle = CreateText(
+            "StartSubtitleText",
+            panel.transform,
+            "All six pieces are available from the start.",
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0f, -186f),
+            new Vector2(780f, 60f),
+            new Color(0.82f, 0.87f, 0.95f, 1f),
+            24f);
+        subtitle.alignment = TextAlignmentOptions.Center;
+
+        startLevelButton = CreateMenuButton(panel.transform, "StartLevelButton", "Stage Mode", new Vector2(0f, 24f));
+        startEndlessButton = CreateMenuButton(panel.transform, "StartEndlessButton", "Endless Outposts", new Vector2(0f, -68f));
+
+        TMP_Text footer = CreateText(
+            "StartFooterText",
+            panel.transform,
+            "Build a line, push forward, and break the enemy base.",
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(0f, 64f),
+            new Vector2(820f, 44f),
+            new Color(0.76f, 0.80f, 0.88f, 1f),
+            20f);
+        footer.alignment = TextAlignmentOptions.Center;
+
+        panel.SetActive(false);
+        return panel;
+    }
+
+    private Button CreateMenuButton(Transform parent, string name, string label, Vector2 anchoredPosition)
+    {
+        GameObject buttonObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+
+        RectTransform rect = buttonObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(360f, 76f);
+        rect.anchoredPosition = anchoredPosition;
+
+        Image image = buttonObject.GetComponent<Image>();
+        image.sprite = ChessCombatFx.GetDefaultSprite();
+        image.color = new Color(0.18f, 0.22f, 0.30f, 0.96f);
+        image.raycastTarget = true;
+
+        Button button = buttonObject.GetComponent<Button>();
+        button.targetGraphic = image;
+
+        TMP_Text labelText = CreateText(
+            name + "_Label",
+            buttonObject.transform,
+            label,
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            Vector2.zero,
+            new Vector2(320f, 48f),
+            Color.white,
+            28f);
+        labelText.alignment = TextAlignmentOptions.Center;
+
+        return button;
+    }
+
+    private void SetGameplayUiVisible(bool visible)
+    {
+        if (cardsPanel != null)
+        {
+            cardsPanel.SetActive(visible);
+        }
+
+        if (modeText != null)
+        {
+            modeText.gameObject.SetActive(visible);
+        }
+
+        if (moneyText != null)
+        {
+            moneyText.gameObject.SetActive(visible);
+        }
+
+        if (scoreText != null)
+        {
+            scoreText.gameObject.SetActive(visible && currentMode == GameMode.Endless);
+        }
+
+        if (resultPanel != null)
+        {
+            resultPanel.SetActive(visible && currentState != GameState.Playing);
+        }
+    }
+
+    private void HideStartMenu()
+    {
+        if (startMenuPanel != null)
+        {
+            startMenuPanel.SetActive(false);
+        }
     }
 
     private Button CreateRestartButton(Transform parent)

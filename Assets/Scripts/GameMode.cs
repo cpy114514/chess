@@ -6,6 +6,7 @@ public enum GameMode
 
 public enum GameState
 {
+    Menu,
     Playing,
     Victory,
     Defeat
