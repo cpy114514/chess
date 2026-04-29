@@ -151,6 +151,7 @@ public class ChessBase : MonoBehaviour
         }
 
         baseCollider.offset = Vector2.zero;
+        baseCollider.isTrigger = true;
     }
 
     private void UpdateUI()

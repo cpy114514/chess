@@ -3,7 +3,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-[ExecuteAlways]
 public class ChessGameManager : MonoBehaviour
 {
     public static ChessGameManager Instance { get; private set; }
@@ -127,18 +126,12 @@ public class ChessGameManager : MonoBehaviour
 
     private void OnEnable()
     {
-        if (!Application.isPlaying)
-        {
-            EnsureSceneSetup();
-        }
+        ResolveReferences();
     }
 
     private void OnValidate()
     {
-        if (!Application.isPlaying)
-        {
-            EnsureSceneSetup();
-        }
+        ResolveReferences();
     }
 
     private void Start()
@@ -332,7 +325,7 @@ public class ChessGameManager : MonoBehaviour
 
         if (enemyBase != null && enemySpawnPoint != null)
         {
-            enemySpawnPoint.position = enemyBase.transform.position + new Vector3(-enemyBaseOffset, 0f, 0f);
+            enemySpawnPoint.position = enemyBase.transform.position + new Vector3(enemyBaseOffset, 0f, 0f);
         }
     }
 
@@ -520,7 +513,7 @@ public class ChessGameManager : MonoBehaviour
         }
 
         ChessBase fallbackBase = team == Team.Player ? playerBase : enemyBase;
-        float offset = team == Team.Player ? playerBaseOffset : -enemyBaseOffset;
+        float offset = team == Team.Player ? playerBaseOffset : enemyBaseOffset;
         if (fallbackBase != null)
         {
             return fallbackBase.transform.position + new Vector3(offset, 0f, 0f);
@@ -1015,7 +1008,7 @@ public class ChessGameManager : MonoBehaviour
 
             if (enemySpawnPoint == null)
             {
-                enemySpawnPoint = CreateSpawnPoint("EnemySpawnPoint", enemyBase, new Vector3(enemyBase != null ? enemyBase.transform.position.x - enemyBaseOffset : 7f, 0f, 0f));
+                enemySpawnPoint = CreateSpawnPoint("EnemySpawnPoint", enemyBase, new Vector3(enemyBase != null ? enemyBase.transform.position.x + enemyBaseOffset : 7f, 0f, 0f));
             }
         }
 
@@ -1279,7 +1272,7 @@ public class ChessGameManager : MonoBehaviour
 
         if (baseObject != null)
         {
-            float xOffset = name == "PlayerSpawnPoint" ? playerBaseOffset : -enemyBaseOffset;
+            float xOffset = name == "PlayerSpawnPoint" ? playerBaseOffset : enemyBaseOffset;
             spawnPoint.transform.position = baseObject.transform.position + new Vector3(xOffset, 0f, 0f);
         }
 
