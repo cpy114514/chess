@@ -49,14 +49,14 @@ public class ChessProjectile : MonoBehaviour
         spriteRenderer.color = color;
         spriteRenderer.sortingOrder = 26;
 
-        transform.localScale = Vector3.one * 0.24f;
+        transform.localScale = Vector3.one * 0.36f;
 
         ChessCombatFx.CreateAttachedGlow(
             transform,
             ChessCombatFx.GetDefaultSprite(),
             "ProjectileGlow",
             new Color(color.r, color.g, color.b, 0.28f),
-            1.8f,
+            2.7f,
             25,
             0.05f,
             8f);
@@ -97,14 +97,14 @@ public class ChessProjectile : MonoBehaviour
         spriteRenderer.color = color;
         spriteRenderer.sortingOrder = 26;
 
-        transform.localScale = Vector3.one * 0.24f;
+        transform.localScale = Vector3.one * 0.36f;
 
         ChessCombatFx.CreateAttachedGlow(
             transform,
             ChessCombatFx.GetDefaultSprite(),
             "HealProjectileGlow",
             new Color(color.r, color.g, color.b, 0.28f),
-            1.8f,
+            2.7f,
             25,
             0.05f,
             8f);
@@ -136,6 +136,12 @@ public class ChessProjectile : MonoBehaviour
 
         if (targetUnit != null || targetBase != null)
         {
+            if (!HasValidTarget())
+            {
+                Destroy(gameObject);
+                return;
+            }
+
             transform.position = Vector3.MoveTowards(transform.position, targetPosition, speed * Time.deltaTime);
 
             if (Vector3.Distance(transform.position, targetPosition) <= hitDistance)
@@ -167,27 +173,66 @@ public class ChessProjectile : MonoBehaviour
     private void Impact()
     {
         Vector3 impactPosition = transform.position;
+        bool didApply = false;
 
         if (healMode)
         {
-            if (targetUnit != null)
+            if (IsValidHealTarget(targetUnit))
             {
                 targetUnit.Heal(healAmount);
                 impactPosition = targetUnit.transform.position;
+                didApply = true;
             }
         }
-        else if (targetUnit != null)
+        else if (IsValidEnemyUnit(targetUnit))
         {
             targetUnit.TakeDamage(damage);
             impactPosition = targetUnit.transform.position;
+            didApply = true;
         }
-        else if (targetBase != null)
+        else if (IsValidEnemyBase(targetBase))
         {
             targetBase.TakeDamage(damage);
             impactPosition = targetBase.transform.position;
+            didApply = true;
         }
 
-        ChessCombatFx.SpawnPulse(impactPosition, projectileColor, 0.12f, 0.62f, 0.25f, 27);
+        if (didApply)
+        {
+            ChessCombatFx.SpawnPulse(impactPosition, projectileColor, 0.18f, 0.93f, 0.25f, 27);
+        }
+
         Destroy(gameObject);
+    }
+
+    private bool HasValidTarget()
+    {
+        if (healMode)
+        {
+            return IsValidHealTarget(targetUnit);
+        }
+
+        return IsValidEnemyUnit(targetUnit) || IsValidEnemyBase(targetBase);
+    }
+
+    private bool IsValidEnemyUnit(ChessUnit unitTarget)
+    {
+        return unitTarget != null
+            && unitTarget.team != team
+            && unitTarget.currentHp > 0f;
+    }
+
+    private bool IsValidHealTarget(ChessUnit unitTarget)
+    {
+        return unitTarget != null
+            && unitTarget.team == team
+            && unitTarget.currentHp > 0f;
+    }
+
+    private bool IsValidEnemyBase(ChessBase baseTarget)
+    {
+        return baseTarget != null
+            && baseTarget.team != team
+            && baseTarget.IsAlive;
     }
 }

@@ -29,8 +29,8 @@ Transform:
   m_GameObject: {fileID: 5544856539973541427}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: -3, y: 3, z: 1}
+  m_LocalPosition: {x: 0, y: 0.3, z: 0}
+  m_LocalScale: {x: -4.5, y: 4.5, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -172,10 +172,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   team: 0
+  unitKind: 5
   unitName: King
-  maxHp: 280
-  attackDamage: 34
+  maxHp: 330
+  attackDamage: 38
   attackRange: 1.35
-  attackCooldown: 0.85
-  moveSpeed: 1.3
+  attackCooldown: 0.95
+  moveSpeed: 1.15
+  damageReduction: 0.1
   currentHp: 0

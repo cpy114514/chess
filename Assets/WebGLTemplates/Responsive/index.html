@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>{{{ PRODUCT_NAME }}}</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #111827;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #unity-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 50% 10%, #263a63 0%, #111827 48%, #080b12 100%);
+    }
+
+    #unity-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #111827;
+      outline: none;
+      touch-action: none;
+    }
+
+    #unity-loading-bar {
+      position: absolute;
+      left: 50%;
+      bottom: 7vh;
+      width: min(520px, 72vw);
+      height: 16px;
+      transform: translateX(-50%);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    #unity-progress-bar-full {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #38bdf8, #facc15);
+      transition: width 120ms ease-out;
+    }
+
+    #unity-warning {
+      position: absolute;
+      left: 50%;
+      top: max(18px, env(safe-area-inset-top));
+      transform: translateX(-50%);
+      z-index: 10;
+      width: min(720px, calc(100vw - 28px));
+      color: #fff;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #unity-warning div {
+      margin: 6px 0;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(17, 24, 39, 0.86);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+
+    #unity-footer {
+      position: absolute;
+      right: max(14px, env(safe-area-inset-right));
+      bottom: max(14px, env(safe-area-inset-bottom));
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    #unity-fullscreen-button {
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 14px;
+      color: white;
+      background: rgba(15, 23, 42, 0.62);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+      cursor: pointer;
+    }
+
+    #unity-fullscreen-button:hover {
+      background: rgba(37, 99, 235, 0.78);
+    }
+  </style>
+</head>
+<body>
+  <div id="unity-container">
+    <canvas id="unity-canvas" tabindex="-1"></canvas>
+    <div id="unity-loading-bar">
+      <div id="unity-progress-bar-full"></div>
+    </div>
+    <div id="unity-warning"></div>
+    <div id="unity-footer">
+      <button id="unity-fullscreen-button" type="button" aria-label="Fullscreen">⛶</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.querySelector("#unity-canvas");
+    const loadingBar = document.querySelector("#unity-loading-bar");
+    const progressBarFull = document.querySelector("#unity-progress-bar-full");
+    const fullscreenButton = document.querySelector("#unity-fullscreen-button");
+    const warningBanner = document.querySelector("#unity-warning");
+
+    function unityShowBanner(msg, type) {
+      const div = document.createElement("div");
+      div.innerHTML = msg;
+      div.style.background = type === "error" ? "rgba(127, 29, 29, 0.92)" : "rgba(146, 64, 14, 0.92)";
+      warningBanner.appendChild(div);
+      if (type !== "error") {
+        setTimeout(() => {
+          warningBanner.removeChild(div);
+        }, 5000);
+      }
+    }
+
+    function resizeCanvas() {
+      canvas.style.width = window.innerWidth + "px";
+      canvas.style.height = window.innerHeight + "px";
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+    window.addEventListener("orientationchange", () => setTimeout(resizeCanvas, 100));
+    resizeCanvas();
+
+    const buildUrl = "Build";
+    const loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+    const config = {
+      dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+      frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+      codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "{{{ COMPANY_NAME }}}",
+      productName: "{{{ PRODUCT_NAME }}}",
+      productVersion: "{{{ PRODUCT_VERSION }}}",
+      showBanner: unityShowBanner,
+      matchWebGLToCanvasSize: true
+    };
+
+    const script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = () => {
+      createUnityInstance(canvas, config, (progress) => {
+        progressBarFull.style.width = (100 * progress) + "%";
+      }).then((unityInstance) => {
+        loadingBar.style.display = "none";
+        fullscreenButton.onclick = () => unityInstance.SetFullscreen(1);
+        resizeCanvas();
+      }).catch((message) => {
+        alert(message);
+      });
+    };
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>

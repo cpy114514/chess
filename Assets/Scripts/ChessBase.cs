@@ -1,8 +1,14 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 public class ChessBase : MonoBehaviour
 {
+    public static readonly List<ChessBase> ActiveBases = new List<ChessBase>();
+
     [Header("Team")]
     public Team team = Team.Player;
 
@@ -24,10 +30,15 @@ public class ChessBase : MonoBehaviour
 
     private void Awake()
     {
+        DisableLegacySlider();
+        RemoveRuntimeFxChildren();
+
         if (spriteRenderer == null)
         {
             spriteRenderer = GetComponent<SpriteRenderer>();
         }
+
+        LoadDefaultBaseSprites();
 
         baseCollider = GetComponent<BoxCollider2D>();
         if (baseCollider == null)
@@ -45,24 +56,48 @@ public class ChessBase : MonoBehaviour
             transform,
             () => currentHp,
             () => maxHp,
-            new Vector3(0f, 1.35f, 0f),
-            1.6f,
-            0.14f);
+            new Vector3(0f, 2.03f, 0f),
+            2.4f,
+            0.21f);
 
         UpdateColliderShape();
+    }
+
+    private void OnEnable()
+    {
+        if (!ActiveBases.Contains(this))
+        {
+            ActiveBases.Add(this);
+        }
+    }
+
+    private void OnDisable()
+    {
+        ActiveBases.Remove(this);
+    }
+
+    public bool IsAlive
+    {
+        get { return !isBroken && currentHp > 0f; }
     }
 
     public void SetTeam(Team newTeam)
     {
         team = newTeam;
+        LoadDefaultBaseSprites();
         RefreshVisual();
     }
 
     public void ResetHp(float hpValue)
     {
-        maxHp = Mathf.Max(1f, hpValue);
-        currentHp = maxHp;
-        isBroken = false;
+        SetHp(hpValue, hpValue);
+    }
+
+    public void SetHp(float maxHpValue, float currentHpValue)
+    {
+        maxHp = Mathf.Max(1f, maxHpValue);
+        currentHp = Mathf.Clamp(currentHpValue, 0f, maxHp);
+        isBroken = currentHp <= 0f;
         UpdateUI();
     }
 
@@ -71,6 +106,21 @@ public class ChessBase : MonoBehaviour
         currentHp = maxHp;
         isBroken = false;
         UpdateUI();
+    }
+
+    public float GetCombatHalfWidth()
+    {
+        if (baseCollider != null)
+        {
+            return Mathf.Clamp(baseCollider.size.x * Mathf.Abs(transform.lossyScale.x) * 0.5f, 0.35f, 0.85f);
+        }
+
+        if (spriteRenderer != null && spriteRenderer.sprite != null)
+        {
+            return Mathf.Clamp(spriteRenderer.bounds.extents.x, 0.35f, 0.85f);
+        }
+
+        return 0.65f;
     }
 
     public void TakeDamage(float damage)
@@ -93,11 +143,23 @@ public class ChessBase : MonoBehaviour
             damageFlashFx.Flash();
         }
 
+        ChessCombatFx.SpawnBaseImpact(transform.position, team);
+        ChessCombatFx.SpawnFloatingText(
+            "-" + Mathf.CeilToInt(damage),
+            transform.position + new Vector3(0f, 1.05f, 0f),
+            new Color(1f, 0.28f, 0.22f, 1f),
+            1.23f,
+            1.53f,
+            0.65f,
+            0.42f,
+            130);
+
         UpdateUI();
 
         if (currentHp <= 0f)
         {
             isBroken = true;
+            ChessCombatFx.SpawnBaseCaptureBurst(transform.position);
 
             if (ChessGameManager.Instance != null)
             {
@@ -110,6 +172,28 @@ public class ChessBase : MonoBehaviour
             else
             {
                 Debug.Log("You Win!");
+            }
+        }
+    }
+
+    private void RemoveRuntimeFxChildren()
+    {
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            Transform child = transform.GetChild(i);
+            if (child == null || child.name != "DamageFlashOverlay")
+            {
+                continue;
+            }
+
+            child.gameObject.SetActive(false);
+            if (Application.isPlaying)
+            {
+                Destroy(child.gameObject);
+            }
+            else
+            {
+                DestroyImmediate(child.gameObject);
             }
         }
     }
@@ -129,6 +213,38 @@ public class ChessBase : MonoBehaviour
         {
             spriteRenderer.sprite = enemyBaseSprite;
         }
+
+        if (damageFlashFx != null)
+        {
+            damageFlashFx.RefreshSourceSprite();
+        }
+
+        UpdateColliderShape();
+    }
+
+    private void LoadDefaultBaseSprites()
+    {
+        if (playerBaseSprite == null)
+        {
+            playerBaseSprite = Resources.Load<Sprite>("PlayerBase");
+        }
+
+        if (enemyBaseSprite == null)
+        {
+            enemyBaseSprite = Resources.Load<Sprite>("EnemyBase");
+        }
+
+#if UNITY_EDITOR
+        if (playerBaseSprite == null)
+        {
+            playerBaseSprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Image/PlayerBase.png");
+        }
+
+        if (enemyBaseSprite == null)
+        {
+            enemyBaseSprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Image/EnemyBase.png");
+        }
+#endif
     }
 
     private void UpdateColliderShape()
@@ -156,9 +272,17 @@ public class ChessBase : MonoBehaviour
 
     private void UpdateUI()
     {
-        if (hpSlider != null)
+        DisableLegacySlider();
+    }
+
+    private void DisableLegacySlider()
+    {
+        if (hpSlider == null)
         {
-            hpSlider.value = currentHp / Mathf.Max(1f, maxHp);
+            return;
         }
+
+        hpSlider.gameObject.SetActive(false);
+        hpSlider = null;
     }
 }
